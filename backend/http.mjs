@@ -31,6 +31,8 @@ export function send(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+export { send as sendJson };
+
 export function sameSecret(value, expected) {
   if (typeof value !== 'string') return false;
   const digest = text => createHash('sha256').update(text).digest();

@@ -1,13 +1,19 @@
 import { mkdirSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { transaction } from './sqlite.mjs';
+import { enableWal, transaction } from './sqlite.mjs';
 
 export { transaction };
 
 const schemaFile = new URL('./schema.sql', import.meta.url);
 const plantingsMigration = new URL('./migrations/002-plantings.sql', import.meta.url);
 const catalogFile = new URL('./catalog/plants.json', import.meta.url);
+
+export function inventoryDatabasePath() {
+  const dataHome = process.env.LOCALAPPDATA || process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
+  return process.env.INVENTORY_DB || join(dataHome, 'XromGroup', 'inventory.sqlite');
+}
 
 function writeCatalog(db, file) {
   const catalog = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
@@ -51,7 +57,8 @@ export function openDatabase(filename) {
   if (filename !== ':memory:') mkdirSync(dirname(resolve(filename)), { recursive: true });
   const db = new DatabaseSync(filename);
   try {
-    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON');
+    enableWal(db);
     transaction(db, () => {
       if (db.prepare('PRAGMA application_id').get().application_id !== 0) {
         throw new Error('INVENTORY_DB должен указывать на базу растений.');

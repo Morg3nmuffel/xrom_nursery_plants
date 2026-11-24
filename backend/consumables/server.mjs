@@ -16,7 +16,7 @@ async function main() {
       return;
     }
     const host = process.env.MATERIALS_HOST || '127.0.0.1';
-    const port = Number(process.env.MATERIALS_PORT || 8788);
+    const port = Number(process.env.MATERIALS_PORT || 8789);
     if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Недопустимый MATERIALS_PORT.');
     const server = createMaterialsService(db, {
       adminUser: process.env.ADMIN_USERNAME, adminPassword: process.env.ADMIN_PASSWORD,

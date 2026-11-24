@@ -9,3 +9,5 @@ build/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+*.env
+demo-data/

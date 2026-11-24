@@ -14,13 +14,14 @@
   <a href="#быстрый-старт">Быстрый старт</a> ·
   <a href="#как-это-работает">Как это работает</a> ·
   <a href="#api-контур">API-контур</a> ·
+  <a href="frontend/README.md">Панель администратора</a> ·
   <a href="backend/README.md">Документация backend</a>
 </p>
 
 ![PoC](https://img.shields.io/badge/status-educational%20PoC-f05e42?style=flat-square)
 ![Node.js](https://img.shields.io/badge/Node.js-24.4%2B-153b2b?style=flat-square&logo=node.js&logoColor=d6f45b)
 ![SQLite](https://img.shields.io/badge/storage-SQLite-153b2b?style=flat-square&logo=sqlite&logoColor=d6f45b)
-![Frontend](https://img.shields.io/badge/frontend-vanilla%20HTML%20%2F%20CSS%20%2F%20JS-d6f45b?style=flat-square&labelColor=153b2b)
+![Admin UI](https://img.shields.io/badge/admin%20UI-React-d6f45b?style=flat-square&labelColor=153b2b)
 
 </div>
 
@@ -44,8 +45,10 @@ XROM соединяет эти сценарии в одном учебном п�
 | **Витрина** | Адаптивная landing page, каталог, фильтры, избранное, учебная корзина, формы вопросов | [`index.html`](index.html) |
 | **Консультант** | Ответы по базе, подбор через уточняющие вопросы, честный fallback, если знаний не хватает | [`app.js`](app.js) |
 | **Справочник** | 12 карточек ухода: свет, полив, почва, зимостойкость, обрезка, цветение, высота | [`backend/catalog/plants.json`](backend/catalog/plants.json) |
+| **Панель администратора** | Партии, доска задач, склад и справочник с административным входом | [`frontend/`](frontend/) |
 | **Учёт растений** | SQLite, партии, места, стадии роста, календарь переходов, история, авторизация администратора | [`backend/server.mjs`](backend/server.mjs) |
 | **Продажи** | Обезличенный оплаченный чек, FIFO-списание готовых партий, защита от повторной проводки | [`backend/sales.mjs`](backend/sales.mjs) |
+| **Задачи сотрудников** | Автоматическое назначение и выполнение задач для пяти сотрудников | [`backend/tasks/server.mjs`](backend/tasks/server.mjs) |
 | **Склад расходников** | Закупки, ручные списания, нормы на растение, автоматическое списание после посадки | [`backend/consumables/server.mjs`](backend/consumables/server.mjs) |
 
 ### Принципы консультанта
@@ -63,11 +66,15 @@ flowchart LR
     storefront --> consultant[Локальный\nконсультант]
     consultant --> catalog[(Справочник\n12 карточек ухода)]
 
-    admin[Администратор] --> inventory[Сервис учёта\n:8787]
+    admin[Администратор] --> panel[React-панель\n:8790]
+    panel --> inventory[Сервис учёта\n:8787]
+    panel --> tasks[Задачи\n:8788]
+    panel --> warehouse[Склад расходников\n:8789]
+    tasks --> plantDb
     inventory --> plantDb[(SQLite\nпартии и история)]
     pos[Касса] -->|оплаченный чек| inventory
 
-    inventory -->|новые посадки\nс cursor| warehouse[Склад расходников\n:8788]
+    inventory -->|новые посадки\nс cursor| warehouse
     warehouse --> materialDb[(SQLite\nматериалы и движения)]
 ```
 
@@ -95,64 +102,32 @@ plants + plant_care ──► plant_batches ──► growth_plan
 2. Задать обычный вопрос, например: `Как часто поливать сансевиерию?`.
 3. Запустить подбор и ответить на вопросы о свете и привычках полива.
 4. Задать вопрос, которого нет в учебной базе, и показать честный fallback вместо выдуманного совета.
-5. При необходимости запустить backend: зарегистрировать посадку, дождаться синхронизации со складом и провести учебный оплаченный чек.
+5. В панели администратора зарегистрировать посадку и проверить, что сервис задач назначил исполнителя, а склад списал материалы по норме.
 
 ## Быстрый старт
 
-### 1. Витрина
+### Панель администратора
 
-Для frontend нужен только Python 3:
+Из корня репозитория запустите демоверсию на Node.js 24.4 или новее.
 
-```powershell
-cd D:\hackathon\xrom-group
-python -m http.server 8000
+```sh
+node frontend/demo.mjs
+```
+
+Задайте пароль в терминале, откройте <http://127.0.0.1:8790/> и войдите как `admin`.
+Скрипт запускает три микросервиса на локальных портах 18787–18789 с отдельными учебными базами.
+
+Ручной запуск, подключение к рабочим базам и сборка React описаны в [руководстве панели](frontend/README.md) и [руководстве backend](backend/README.md).
+
+### Публичная витрина
+
+Запустите статический сайт из корня репозитория.
+
+```sh
+python3 -m http.server 8000 --bind 127.0.0.1
 ```
 
 Откройте <http://127.0.0.1:8000/>.
-
-### 2. Сервис учёта растений
-
-Нужен **Node.js 24.4+** со встроенным `node:sqlite`. Внешние npm-пакеты не используются.
-
-Откройте отдельное окно PowerShell из корня репозитория:
-
-```powershell
-cd D:\hackathon\xrom-group
-
-$env:INVENTORY_DB = Join-Path $env:LOCALAPPDATA 'XromGroup\inventory-demo.sqlite'
-$env:ADMIN_PASSWORD = 'change-me-admin'
-$env:POS_TOKEN = 'change-me-pos'
-$env:MATERIAL_SYNC_TOKEN = 'change-me-sync'
-
-# Один раз загрузить пять учебных партий.
-node backend/server.mjs seed-demo
-
-# Запустить HTTP API на 127.0.0.1:8787.
-node backend/server.mjs
-```
-
-Сервис требует разные значения `ADMIN_PASSWORD` и `POS_TOKEN`. Для сетевого запуска используйте реальные секреты, HTTPS и базу вне каталога, который раздаёт витрина.
-
-### 3. Склад расходников
-
-Откройте второе окно PowerShell. Значение `MATERIAL_SYNC_TOKEN` должно совпадать с ним в сервисе растений, а пароль администратора — с `ADMIN_PASSWORD`:
-
-```powershell
-cd D:\hackathon\xrom-group
-
-$env:MATERIALS_DB = Join-Path $env:LOCALAPPDATA 'XromGroup\consumables-demo.sqlite'
-$env:ADMIN_PASSWORD = 'change-me-admin'
-$env:MATERIAL_SYNC_TOKEN = 'change-me-sync'
-$env:PLANT_SERVICE_URL = 'http://127.0.0.1:8787'
-
-# Один раз создать учебную закупку и норму: 1 горшок + 0.5 л грунта.
-node backend/consumables/server.mjs seed-demo
-
-# Запустить складской API на 127.0.0.1:8788.
-node backend/consumables/server.mjs
-```
-
-Подробные команды для входа, посадки, кассы и проверки остатков находятся в [`backend/README.md`](backend/README.md). Интеграция склада описана в [`backend/consumables/README.md`](backend/consumables/README.md).
 
 ## API-контур
 
@@ -170,7 +145,17 @@ node backend/consumables/server.mjs
 | `POST` | `/api/pos/sales` | Провести оплаченный чек через `POS_TOKEN` |
 | `GET` | `/api/internal/plantings?after=0` | Внутренняя лента для склада |
 
-### Склад расходников — `http://127.0.0.1:8788`
+### Задачи сотрудников — `http://127.0.0.1:8788`
+
+| Метод | Маршрут | Назначение |
+| --- | --- | --- |
+| `POST` | `/api/admin/login` | Получить токен администратора |
+| `GET` | `/api/admin/tasks` | Доска задач всей команды |
+| `POST` | `/api/tasks/login` | Получить токен сотрудника |
+| `GET` | `/api/tasks` | Посмотреть назначенные задачи |
+| `POST` | `/api/tasks/:id/start`, `/api/tasks/:id/complete` | Отметить начало и выполнение своей задачи |
+
+### Склад расходников — `http://127.0.0.1:8789`
 
 | Метод | Маршрут | Назначение |
 | --- | --- | --- |
@@ -244,6 +229,7 @@ node backend/server.mjs import-catalog путь\к\plants.json
 ├── app.js                             # Чат, подбор, каталог, формы и корзина
 ├── brief.pdf                          # Исходное описание кейса
 ├── brief-extracted.txt                # Текстовая выжимка брифа
+├── frontend/                         # React-панель и её веб-сервер
 └── backend/
     ├── catalog/plants.json            # 12 карточек ухода
     ├── server.mjs                     # Запуск сервиса учёта
@@ -254,7 +240,8 @@ node backend/server.mjs import-catalog путь\к\plants.json
     ├── schema.sql                     # Схема базы растений
     ├── migrations/                    # Эволюция схемы и лента посадок
     ├── examples/                      # Примеры партий, посадки и чека
-    ├── test/                          # Интеграционные тесты обоих контуров
+    ├── test/                          # Тесты микросервисов
+    ├── tasks/                         # Назначение задач сотрудникам
     └── consumables/                   # Отдельный склад расходников
 ```
 
@@ -263,15 +250,15 @@ node backend/server.mjs import-catalog путь\к\plants.json
 Запустить весь набор тестов можно без установки npm-зависимостей:
 
 ```powershell
-node --test backend/test/inventory.test.mjs backend/test/consumables.test.mjs
+node --test
 ```
 
-Тесты проверяют авторизацию, импорт каталога, идемпотентность посадок и чеков, optimistic locking, переходы роста, FIFO-списание, rollback при дефиците и восстановление после перезапуска.
+Тесты проверяют авторизацию, импорт каталога, идемпотентность посадок и чеков, optimistic locking, переходы роста, FIFO-списание, rollback при дефиците и восстановление после перезапуска. Отдельные проверки охватывают распределение задач и доступ к панели.
 
 ## Ограничения PoC
 
 - Цены и остатки в витрине учебные.
-- Витрина и backend запускаются независимо; frontend пока не получает данные из API автоматически.
+- Публичная витрина использует учебные данные. Административная панель читает данные из трёх микросервисов.
 - Внешний платёжный провайдер, production-логирование, HTTPS-терминация и реальная учётная запись кассы находятся за пределами PoC.
 - Для рабочего развёртывания секреты нужно хранить вне README и переменных, доступных клиентскому браузеру.
 

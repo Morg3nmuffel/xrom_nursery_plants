@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { transaction } from '../sqlite.mjs';
+import { enableWal, transaction } from '../sqlite.mjs';
 
 // Separate application id prevents opening the plant database as a materials ledger.
 const applicationId = 0x58524d43;
@@ -21,7 +21,7 @@ export function openMaterials(filename) {
       db.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
       db.exec(`PRAGMA application_id = ${applicationId}; PRAGMA user_version = 1`);
     });
-    db.exec('PRAGMA journal_mode = WAL');
+    enableWal(db);
     return db;
   } catch (error) {
     db.close();

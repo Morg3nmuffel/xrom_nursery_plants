@@ -1,7 +1,5 @@
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { createService } from './api.mjs';
-import { importCatalog, openDatabase } from './db.mjs';
+import { importCatalog, inventoryDatabasePath, openDatabase } from './db.mjs';
 import { Inventory } from './inventory.mjs';
 
 async function main() {
@@ -9,8 +7,7 @@ async function main() {
   if (!['serve', 'seed-demo', 'import-catalog'].includes(command)) {
     throw new Error('Команды: serve | seed-demo | import-catalog [файл.json]');
   }
-  const dataHome = process.env.LOCALAPPDATA || process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
-  const filename = process.env.INVENTORY_DB || join(dataHome, 'XromGroup', 'inventory.sqlite');
+  const filename = inventoryDatabasePath();
   const db = openDatabase(filename);
   try {
     if (command === 'seed-demo') {

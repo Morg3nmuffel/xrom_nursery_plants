@@ -1,10 +1,37 @@
-# Учёт растений питомника
+# Backend питомника
+
+Учёт растений, задачи сотрудников и склад расходников работают как три отдельных HTTP-сервиса. При регистрации посадки сервис учёта создаёт партию и событие в одной транзакции. Планировщик находит партию в общей базе растений и назначает задачу одному из пяти сотрудников. Склад получает событие по HTTP и списывает материалы по норме посадки в своей базе.
+
+## Запуск трёх сервисов
+
+Понадобится Node.js 24.4 или новее. Скопируйте [шаблон](examples/demo.env.example) в `examples/demo.env` и задайте непустые `ADMIN_PASSWORD`, `POS_TOKEN` и `MATERIAL_SYNC_TOKEN`. Выполняйте команды из папки, где рядом лежат `server.mjs`, `tasks` и `consumables`. Для локального примера подготовьте пять партий, учебные остатки расходников и норму посадки.
+
+```sh
+node --env-file=examples/demo.env server.mjs seed-demo
+node --env-file=examples/demo.env consumables/server.mjs seed-demo
+```
+
+Откройте три терминала в этой же папке и выполните по одной команде в каждом.
+
+| Микросервис | Порт | Команда |
+| --- | ---: | --- |
+| Учёт растений и продажи | 8787 | `node --env-file=examples/demo.env server.mjs` |
+| Задачи сотрудников | 8788 | `node --env-file=examples/demo.env tasks/server.mjs` |
+| Склад расходников | 8789 | `node --env-file=examples/demo.env consumables/server.mjs` |
+
+Каждый процесс отвечает на `GET /health` на своём порту. Для проверки рабочего цикла зарегистрируйте посадку через `POST /api/admin/plantings` на порту 8787. Задание появится в `GET /api/tasks?scope=team` на 8788, а результат списания — в `GET /api/admin/plantings` на 8789. Токен для каждого API получают на порту соответствующего сервиса. [API задач](tasks/README.md) · [API склада](consumables/README.md)
+
+Для рабочего запуска задайте один и тот же абсолютный `INVENTORY_DB` в процессах учёта растений и задач. Складу укажите отдельный `MATERIALS_DB` и адрес учёта в `PLANT_SERVICE_URL` (по умолчанию `http://127.0.0.1:8787`). Если раньше вы явно задавали складу порт `8788`, обновите `MATERIALS_PORT` до `8789` для запуска вместе с задачами.
+
+Учёту и складу нужен `ADMIN_PASSWORD` и одинаковый ключ обмена `MATERIAL_SYNC_TOKEN`. Учёту также нужен отдельный ключ кассы `POS_TOKEN`. Для задач задайте `TASKS_EMPLOYEES_FILE` с пятью рабочими учётными записями. Для подключения панели администратора передайте всем трём процессам одинаковые `ADMIN_USERNAME` и `ADMIN_PASSWORD`. Порядок запуска веб-приложения описан в [инструкции к frontend](../frontend/README.md). Пути в `demo-data` приведены в примере конфигурации. [Шаблон локальных настроек](examples/demo.env.example)
+
+Все проверки запускаются командой `node --test` из папки с `server.mjs`.
+
+## Учёт растений
 
 HTTP-сервис на Node.js со встроенной SQLite. Одна строка учёта соответствует партии одного растения в одном месте и на одной стадии. Один сорт может одновременно расти в нескольких теплицах. Касса списывает проданные экземпляры из готовых партий. Администратор видит текущие остатки и историю изменений.
 
-## Запуск
-
-Понадобится Node.js 24.4 или новее с модулем `node:sqlite`. Сервис использует стандартные модули Node.js. Все команды выполняются из каталога, содержащего папку `backend`.
+### Запуск сервиса учёта отдельно
 
 Откройте PowerShell и запустите сервис с учебными партиями из примера на фото.
 
@@ -12,11 +39,11 @@ HTTP-сервис на Node.js со встроенной SQLite. Одна стр
 $env:INVENTORY_DB = Join-Path $env:LOCALAPPDATA 'XromGroup\inventory-demo.sqlite'
 $env:ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Пароль для admin' -AsSecureString)).Password
 $env:POS_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Отдельный секретный ключ кассы' -AsSecureString)).Password
-node backend/server.mjs seed-demo
-node backend/server.mjs
+node server.mjs seed-demo
+node server.mjs
 ```
 
-Сервис слушает `http://127.0.0.1:8787`. Для запуска с готовым файлом SQLite укажите его полный путь в `INVENTORY_DB`. Для рабочего учёта укажите путь к новой базе и запустите команду `node backend/server.mjs`. В новую базу автоматически загружаются 12 карточек ухода из [plants.json](catalog/plants.json). Количество и местоположение появляются при регистрации партий.
+Сервис слушает `http://127.0.0.1:8787`. Для запуска с готовым файлом SQLite укажите его полный путь в `INVENTORY_DB`. Для рабочего учёта с новой базой укажите её путь и запустите `node server.mjs`. В новую базу автоматически загружаются 12 карточек ухода из [plants.json](catalog/plants.json). Количество и местоположение появляются при регистрации партий.
 
 Команда `seed-demo` однократно вносит пять [учебных партий с фото](examples/photo-batches.json). Для гортензии, туи и лаванды она использует названия из справочника. Для клематиса и петунии добавляет названия с фото. В ответе API поле `care` для этих двух растений равно `null` до импорта их карточек.
 
@@ -46,7 +73,7 @@ $inventory.items | Format-Table id,name,location,stage_label,quantity,version
 В примере высаживают 40 экземпляров лаванды в теплице 1, ряд 2. После входа администратора выполните команду с [примером посадки](examples/planting.json).
 
 ```powershell
-$body = Get-Content -Raw -Encoding UTF8 backend/examples/planting.json
+$body = Get-Content -Raw -Encoding UTF8 examples/planting.json
 $planting = Invoke-RestMethod -Method Post -Uri "$api/admin/plantings" -Headers $admin -ContentType $jsonType -Body $body
 $planting | Format-Table planting_id,batch_id,location,stage,quantity,planted_at
 Invoke-RestMethod -Uri "$api/admin/inventory/$($planting.batch_id)/history" -Headers $admin
@@ -79,7 +106,7 @@ Invoke-RestMethod -Uri "$api/admin/inventory/$($planting.batch_id)/history" -Hea
 ```powershell
 $posKey = [System.Net.NetworkCredential]::new('', (Read-Host 'Ключ кассы' -AsSecureString)).Password
 $pos = @{ Authorization = "Bearer $posKey" }
-$receipt = Get-Content -Raw -Encoding UTF8 backend/examples/paid-receipt.json
+$receipt = Get-Content -Raw -Encoding UTF8 examples/paid-receipt.json
 $sale = Invoke-RestMethod -Method Post -Uri "$api/pos/sales" -Headers $pos -ContentType $jsonType -Body $receipt
 $sale.movements | Format-Table plant_id,batch_id,location,sold,remaining_after_sale
 (Invoke-RestMethod -Uri "$api/admin/inventory?stage=ready" -Headers $admin).items
@@ -134,6 +161,7 @@ $sale.movements | Format-Table plant_id,batch_id,location,sold,remaining_after_s
 | `PATCH /api/admin/inventory/{id}` | Администратор | Передать текущую `version` и изменяемые поля `location`, `stage`, `quantity`, `growth_plan` |
 | `GET /api/admin/inventory/{id}/history` | Администратор | Посадки, поступления, правки, переходы и продажи по порядку записи. У посадки есть номер и фактическая дата, у продажи — идентификаторы кассы и чека |
 | `POST /api/pos/sales` | Касса | Провести оплаченный чек |
+| `GET /api/internal/plantings?after=0` | Склад с `MATERIAL_SYNC_TOKEN` | Получить до 100 новых посадок после указанного номера события |
 
 ## SQL и обслуживание
 
@@ -149,7 +177,7 @@ FROM inventory
 ORDER BY id;
 ```
 
-Для обновления справочника выполните `node backend/server.mjs import-catalog путь/к/plants.json`. Импорт добавляет и обновляет карточки по стабильному `id` одной транзакцией с сохранением связей с партиями. Для проверки сервиса выполните `node --test backend/test/inventory.test.mjs`.
+Для обновления справочника выполните `node server.mjs import-catalog путь/к/plants.json`. Импорт добавляет и обновляет карточки по стабильному `id` одной транзакцией с сохранением связей с партиями. Для проверки сервиса учёта выполните `node --test test/inventory.test.mjs`.
 
 | Переменная окружения | Назначение и значение по умолчанию |
 |---|---|

@@ -2,9 +2,9 @@
 
 Склад — отдельный HTTP-сервис со своей базой SQLite. Он учитывает закупки, ручное использование и расход при посадке растений. Администратор видит количество в единицах материала, журнал движений и посадки, которые ожидают списания.
 
-## Запуск двух сервисов
+## Запуск склада с сервисом учёта растений
 
-Понадобится Node.js 24.4 или новее со встроенным `node:sqlite`. Откройте два окна PowerShell в каталоге, содержащем папку `backend`. Для примера в обоих окнах задайте одинаковый пароль администратора и одинаковый ключ обмена. Храните файлы рабочих баз вне папки, которую раздаёт HTTP-сервер витрины.
+Понадобится Node.js 24.4 или новее со встроенным `node:sqlite`. Откройте два окна PowerShell в папке, где рядом лежат `server.mjs`, `tasks` и `consumables`. Для этого примера в обоих окнах задайте одинаковый пароль администратора и одинаковый ключ обмена. Для запуска вместе с сервисом задач используйте общую конфигурацию. [Запуск трёх сервисов](../README.md#запуск-трёх-сервисов)
 
 ```powershell
 $env:ADMIN_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Пароль admin' -AsSecureString)).Password
@@ -15,18 +15,18 @@ $env:MATERIAL_SYNC_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host '�
 
 ```powershell
 $env:POS_TOKEN = [System.Net.NetworkCredential]::new('', (Read-Host 'Ключ кассы' -AsSecureString)).Password
-node backend/server.mjs
+node server.mjs
 ```
 
 **Во втором окне запустите склад.** Следующие команды создают отдельную демонстрационную базу с учебной закупкой 100 горшков и 50 л грунта. Общая учебная норма — 1 горшок и 0,5 л на растение. Повторный `seed-demo` учитывает эту закупку однократно.
 
 ```powershell
 $env:MATERIALS_DB = Join-Path $env:LOCALAPPDATA 'XromGroup\consumables-demo.sqlite'
-node backend/consumables/server.mjs seed-demo
-node backend/consumables/server.mjs
+node consumables/server.mjs seed-demo
+node consumables/server.mjs
 ```
 
-Можно также указать в `MATERIALS_DB` полный путь к готовой демонстрационной базе. Для рабочего склада задайте путь к новой базе и запустите только `node backend/consumables/server.mjs`. Артикулы `pot` и `soil` начнут с нулевого остатка. Зарегистрируйте фактический запас первой приходной операцией и задайте норму посадки через API.
+Можно также указать в `MATERIALS_DB` полный путь к готовой демонстрационной базе. Для рабочего склада задайте путь к новой базе и запустите `node consumables/server.mjs`. Артикулы `pot` и `soil` начнут с нулевого остатка. Зарегистрируйте фактический запас первой приходной операцией и задайте норму посадки через API.
 
 ## Проверка на одной посадке
 
@@ -34,7 +34,7 @@ node backend/consumables/server.mjs
 
 ```powershell
 $plants = 'http://127.0.0.1:8787/api/admin'
-$stock = 'http://127.0.0.1:8788/api/admin'
+$stock = 'http://127.0.0.1:8789/api/admin'
 $json = 'application/json; charset=utf-8'
 $password = [System.Net.NetworkCredential]::new('', (Read-Host 'Пароль admin' -AsSecureString)).Password
 $credentials = @{ username = 'admin'; password = $password } | ConvertTo-Json
@@ -57,13 +57,13 @@ Invoke-RestMethod -Method Post -Uri "$plants/plantings" -Headers $plantHeaders -
 Зарегистрируйте закупку ещё 20 горшков и 10 л грунта. После этой закупки в примере будет 80 горшков и 40 л. [Пример накладной](examples/purchase.json)
 
 ```powershell
-$purchase = Get-Content -Raw -Encoding UTF8 backend/consumables/examples/purchase.json
+$purchase = Get-Content -Raw -Encoding UTF8 consumables/examples/purchase.json
 Invoke-RestMethod -Method Post -Uri "$stock/purchases" -Headers $stockHeaders -ContentType $json -Body $purchase
 ```
 
 ## Контракт складского API
 
-Базовый адрес по умолчанию `http://127.0.0.1:8788`. Для административных запросов передайте `Authorization: Bearer <access_token>`, для тела — `Content-Type: application/json`. Сессия администратора действует восемь часов. Остатки содержат артикул, название, единицу, точность и количество.
+Базовый адрес по умолчанию `http://127.0.0.1:8789`. Для административных запросов передайте `Authorization: Bearer <access_token>`, для тела — `Content-Type: application/json`. Сессия администратора действует восемь часов. Остатки содержат артикул, название, единицу, точность и количество.
 
 | Метод и маршрут | Назначение и тело запроса |
 |---|---|
@@ -108,7 +108,7 @@ Invoke-RestMethod -Method Post -Uri "$stock/purchases" -Headers $stockHeaders -C
 | Переменная | Назначение |
 |---|---|
 | `MATERIALS_DB` | Складская SQLite. По умолчанию `XromGroup/consumables.sqlite` в каталоге данных пользователя |
-| `MATERIALS_HOST`, `MATERIALS_PORT` | Адрес склада, по умолчанию `127.0.0.1` и `8788` |
+| `MATERIALS_HOST`, `MATERIALS_PORT` | Адрес склада, по умолчанию `127.0.0.1` и `8789` |
 | `PLANT_SERVICE_URL` | Адрес сервиса растений для склада, по умолчанию `http://127.0.0.1:8787` |
 | `MATERIALS_POLL_MS` | Период опроса в миллисекундах, по умолчанию `2000` |
 | `MATERIAL_SYNC_TOKEN` | Общий ключ двух процессов для чтения `GET /api/internal/plantings?after=0` на сервисе растений. Задаётся отдельно от административного пароля и ключа кассы |
@@ -121,4 +121,4 @@ SELECT name AS "Расходник", quantity AS "Остаток", unit AS "Ед
 FROM material_inventory ORDER BY name;
 ```
 
-Для проверки обоих сервисов выполните `node --test backend/test/inventory.test.mjs backend/test/consumables.test.mjs`.
+Для проверки всех сервисов выполните `node --test` из папки с `server.mjs` сервиса растений.
