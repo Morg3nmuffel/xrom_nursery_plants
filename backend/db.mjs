@@ -1,0 +1,75 @@
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
+import { transaction } from './sqlite.mjs';
+
+export { transaction };
+
+const schemaFile = new URL('./schema.sql', import.meta.url);
+const plantingsMigration = new URL('./migrations/002-plantings.sql', import.meta.url);
+const catalogFile = new URL('./catalog/plants.json', import.meta.url);
+
+function writeCatalog(db, file) {
+  const catalog = JSON.parse(readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  if (catalog.entity !== 'nursery_plants' || catalog.schema_version !== '1.0' ||
+      !Array.isArray(catalog.plants) || catalog.plants.length === 0) {
+    throw new Error('Ожидался справочник nursery_plants версии 1.0 с массивом plants.');
+  }
+  const plant = db.prepare(`
+    INSERT INTO plants(id, name) VALUES (?, ?)
+    ON CONFLICT(id) DO UPDATE SET name = excluded.name`);
+  const care = db.prepare(`
+    INSERT INTO plant_care (plant_id, scientific_name, category, light, watering,
+      soil, hardiness_zone, min_temperature_c, hardiness_notes, pruning, flowering,
+      min_height_cm, max_height_cm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(plant_id) DO UPDATE SET
+      scientific_name = excluded.scientific_name, category = excluded.category,
+      light = excluded.light, watering = excluded.watering, soil = excluded.soil,
+      hardiness_zone = excluded.hardiness_zone, min_temperature_c = excluded.min_temperature_c,
+      hardiness_notes = excluded.hardiness_notes, pruning = excluded.pruning,
+      flowering = excluded.flowering, min_height_cm = excluded.min_height_cm,
+      max_height_cm = excluded.max_height_cm`);
+  const seen = new Set();
+  for (const p of catalog.plants) {
+    if (typeof p.id !== 'string' || !p.id || p.id !== p.id.trim() || p.id.length > 160 || seen.has(p.id)) {
+      throw new Error('Нужен уникальный id растения длиной 1–160 символов без крайних пробелов.');
+    }
+    seen.add(p.id);
+    plant.run(p.id, p.name);
+    care.run(p.id, p.scientific_name, p.category, p.light, p.watering, p.soil,
+      p.hardiness.zone, p.hardiness.min_temperature_c, p.hardiness.notes,
+      p.pruning, p.flowering, p.height.min_cm, p.height.max_cm);
+  }
+  return seen.size;
+}
+
+export function importCatalog(db, file = catalogFile) {
+  return transaction(db, () => writeCatalog(db, file));
+}
+
+export function openDatabase(filename) {
+  if (filename !== ':memory:') mkdirSync(dirname(resolve(filename)), { recursive: true });
+  const db = new DatabaseSync(filename);
+  try {
+    db.exec('PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;');
+    transaction(db, () => {
+      if (db.prepare('PRAGMA application_id').get().application_id !== 0) {
+        throw new Error('INVENTORY_DB должен указывать на базу растений.');
+      }
+      const { user_version: version } = db.prepare('PRAGMA user_version').get();
+      if (version === 3) return;
+      if (version < 0 || version > 3) throw new Error('Неизвестная версия схемы базы учёта.');
+      if (version === 0) {
+        db.exec(readFileSync(schemaFile, 'utf8'));
+        writeCatalog(db, catalogFile);
+      }
+      if (version < 2) db.exec(readFileSync(plantingsMigration, 'utf8'));
+      db.exec(readFileSync(new URL('./migrations/003-planting-feed.sql', import.meta.url), 'utf8'));
+      db.exec('PRAGMA user_version = 3');
+    });
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}

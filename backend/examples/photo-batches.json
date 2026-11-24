@@ -1,0 +1,7 @@
+[
+  { "plant_id": "hydrangea-paniculata-limelight", "location": "Теплица 2, ряд 4", "stage": "ready", "quantity": 120 },
+  { "plant_id": "thuja-occidentalis-smaragd", "location": "Площадка Б", "stage": "ready", "quantity": 64 },
+  { "plant_id": "lavandula-angustifolia", "location": "Теплица 1", "stage": "rooting", "quantity": 300 },
+  { "plant_id": "clematis-nelly-moser", "name": "Клематис «Нелли Мозер»", "location": "Теплица 2, ряд 1", "stage": "growing", "quantity": 70 },
+  { "plant_id": "petunia-ampelnaya", "name": "Петуния ампельная", "location": "Теплица 3", "stage": "sowing", "quantity": 800 }
+]

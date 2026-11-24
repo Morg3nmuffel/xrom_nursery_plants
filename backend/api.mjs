@@ -1,0 +1,83 @@
+import { Inventory } from './inventory.mjs';
+import { recordSale } from './sales.mjs';
+import { invalid } from './validation.mjs';
+import { adminAccess, bearerToken, jsonServer, missingRoute, readJson, sameSecret, send, unauthorized } from './http.mjs';
+
+export function createService(db, { adminUser = 'admin', adminPassword, posToken, syncToken, growthIntervalMs = 30_000 }) {
+  if (!adminUser || !adminPassword || !posToken || adminPassword === posToken) {
+    throw new Error('Задайте разные ADMIN_PASSWORD и POS_TOKEN, а также непустой логин администратора.');
+  }
+  if (!Number.isInteger(growthIntervalMs) || growthIntervalMs <= 0 || growthIntervalMs > 2147483647) {
+    throw new Error('GROWTH_INTERVAL_MS должен быть положительным целым числом до 2147483647.');
+  }
+  const inventory = new Inventory(db);
+  const admin = adminAccess({ adminUser, adminPassword });
+  if (syncToken && [posToken, adminPassword].includes(syncToken)) throw new Error('Для обмена со складом задайте отдельный MATERIAL_SYNC_TOKEN.');
+
+  async function route(req, res) {
+    const { pathname, searchParams } = new URL(req.url, 'http://localhost');
+    const method = req.method;
+    if (pathname === '/health' && method === 'GET') {
+      db.prepare('SELECT 1').get();
+      return send(res, 200, { status: 'ok' });
+    }
+    if (pathname === '/api/admin/login' && method === 'POST') {
+      return send(res, 200, admin.login(await readJson(req)));
+    }
+
+    const bearer = bearerToken(req);
+    if (pathname === '/api/internal/plantings' && method === 'GET') {
+      if (!syncToken || !sameSecret(bearer, syncToken)) unauthorized();
+      const after = Number(searchParams.get('after') ?? 0);
+      if (!Number.isSafeInteger(after) || after < 0) invalid('Недопустимый курсор after.');
+      const items = db.prepare('SELECT * FROM planting_feed WHERE seq > ? ORDER BY seq LIMIT 100').all(after);
+      return send(res, 200, { items });
+    }
+    if (pathname === '/api/pos/sales' && method === 'POST') {
+      if (!sameSecret(bearer, posToken)) unauthorized();
+      const result = recordSale(db, await readJson(req));
+      return send(res, result.replayed ? 200 : 201, result);
+    }
+    if (!pathname.startsWith('/api/admin/')) missingRoute();
+    admin.require(bearer);
+    if (pathname === '/api/admin/logout' && method === 'POST') {
+      return send(res, 200, admin.logout(bearer));
+    }
+    if (pathname === '/api/admin/plants' && method === 'GET') {
+      return send(res, 200, { items: inventory.catalog() });
+    }
+    if (pathname === '/api/admin/plantings' && method === 'POST') {
+      const planting = inventory.plant(await readJson(req));
+      return send(res, planting.replayed ? 200 : 201, planting);
+    }
+    if (pathname === '/api/admin/inventory') {
+      if (method === 'GET') return send(res, 200, inventory.list(searchParams.get('stage')));
+      if (method === 'POST') return send(res, 201, inventory.create(await readJson(req)));
+    }
+    const batch = /^\/api\/admin\/inventory\/([1-9]\d*)(\/history)?$/.exec(pathname);
+    if (batch) {
+      const id = Number(batch[1]);
+      if (!Number.isSafeInteger(id)) invalid('Некорректный идентификатор партии.');
+      if (batch[2] && method === 'GET') return send(res, 200, { items: inventory.history(id) });
+      if (!batch[2] && method === 'GET') return send(res, 200, inventory.detail(id));
+      if (!batch[2] && method === 'PATCH') return send(res, 200, inventory.update(id, await readJson(req)));
+    }
+    missingRoute();
+  }
+
+  inventory.applyDueGrowth();
+  const server = jsonServer(route);
+  let timer;
+  server.once('listening', () => {
+    timer = setInterval(() => {
+      try {
+        inventory.applyDueGrowth();
+      } catch (error) {
+        console.error('Ошибка фоновой обработки роста:', error.message);
+      }
+    }, growthIntervalMs);
+    timer.unref();
+  });
+  server.once('close', () => clearInterval(timer));
+  return server;
+}

@@ -1,0 +1,7 @@
+{
+  "operation_id": "invoice-demo-001",
+  "items": [
+    { "material_id": "pot", "quantity": 20 },
+    { "material_id": "soil", "quantity": 10 }
+  ]
+}

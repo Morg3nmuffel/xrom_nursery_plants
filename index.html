@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="XROM Group — растения, которые приживаются. Учебный прототип консультанта по растениям." />
+    <title>XROM Group — консультант по растениям</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="announcement-bar">
+      <div class="container announcement-inner">
+        <span class="live-dot"></span>
+        <span>Консультант на связи</span>
+        <span class="announcement-divider"></span>
+        <span class="announcement-muted">Отвечаем по базе знаний, а не придумываем уход</span>
+        <button class="announcement-link" data-scroll="consultant">Задать вопрос <span>↗</span></button>
+      </div>
+    </div>
+
+    <header class="site-header" id="top">
+      <div class="container header-inner">
+        <a class="brand" href="#top" aria-label="XROM Group, на главную">
+          <span class="brand-mark">X</span>
+          <span class="brand-copy">
+            <strong>XROM</strong>
+            <small>GROUP / PLANTS</small>
+          </span>
+        </a>
+
+        <nav class="main-nav" aria-label="Основная навигация">
+          <a href="#catalog">Каталог</a>
+          <a href="#consultant">Консультант</a>
+          <a href="#how-it-works">Как это работает</a>
+          <a href="#about">О питомнике</a>
+        </nav>
+
+        <div class="header-actions">
+          <button class="header-icon-button" aria-label="Поиск" data-action="search">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"></circle><path d="m16 16 5 5"></path></svg>
+          </button>
+          <button class="header-icon-button cart-button" aria-label="Корзина" data-scroll="catalog">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h2l1.5 10.2a2 2 0 0 0 2 1.8h7.7a2 2 0 0 0 1.9-1.5L21 8H7"></path><circle cx="10" cy="20" r="1"></circle><circle cx="18" cy="20" r="1"></circle></svg>
+            <span class="cart-count">0</span>
+          </button>
+          <button class="menu-toggle" aria-label="Открыть меню" data-action="menu"><span></span><span></span></button>
+        </div>
+      </div>
+      <div class="mobile-nav" id="mobile-nav">
+        <a href="#catalog">Каталог</a>
+        <a href="#consultant">Консультант</a>
+        <a href="#how-it-works">Как это работает</a>
+        <a href="#about">О питомнике</a>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero-section">
+        <div class="hero-noise"></div>
+        <div class="container hero-grid">
+          <div class="hero-content reveal">
+            <div class="eyebrow light-eyebrow"><span>01</span> Растения без лотереи</div>
+            <h1>Выберите растение, которое <em>впишется</em> в вашу жизнь.</h1>
+            <p class="hero-lead">Не знаете, что переживёт ваш северный подоконник, отпуск и кота? Спросите консультанта XROM — он сверяется с базой питомника.</p>
+            <div class="hero-actions">
+              <button class="button button-lime" data-scroll="consultant">Подобрать растение <span>↗</span></button>
+              <button class="text-button text-button-light" data-scroll="catalog">Смотреть каталог <span>↓</span></button>
+            </div>
+            <div class="hero-proof">
+              <div class="avatar-stack" aria-hidden="true">
+                <span>А</span><span>М</span><span>К</span>
+              </div>
+              <div><strong>1 200+</strong><span>вопросов уже разобрали</span></div>
+            </div>
+          </div>
+
+          <div class="hero-visual reveal reveal-delay-1">
+            <div class="hero-image-wrap">
+              <img src="https://images.unsplash.com/photo-1497250681960-ef046c08a56e?auto=format&fit=crop&w=1200&q=88" alt="Большие листья комнатного растения" />
+              <div class="image-stamp"><span>GROW<br />SMART</span><i>✳</i></div>
+              <div class="hero-note note-top"><span class="note-dot"></span><strong>Проверено агрономом</strong><small>база обновлена сегодня</small></div>
+              <div class="hero-note note-bottom"><span>↓</span><strong>Подбор за 2 минуты</strong></div>
+            </div>
+            <div class="hero-card-float">
+              <div class="mini-orb">✦</div>
+              <div><span>Сейчас в наличии</span><strong>Маранта<br />«Лимонный лайм»</strong></div>
+              <b>от 1 490 ₽</b>
+            </div>
+          </div>
+        </div>
+        <div class="hero-marquee" aria-hidden="true"><div>УМНЫЙ УХОД <span>✳</span> ЧЕСТНЫЙ КАТАЛОГ <span>✳</span> ЖИВЫЕ РАСТЕНИЯ <span>✳</span> УМНЫЙ УХОД <span>✳</span> ЧЕСТНЫЙ КАТАЛОГ <span>✳</span></div></div>
+      </section>
+
+      <section class="value-strip">
+        <div class="container value-grid">
+          <div class="value-item"><span class="value-number">01</span><div><strong>Знаем</strong><p>свет, полив и темп роста каждой позиции</p></div></div>
+          <div class="value-item"><span class="value-number">02</span><div><strong>Уточняем</strong><p>задаём вопросы, когда одного слова мало</p></div></div>
+          <div class="value-item"><span class="value-number">03</span><div><strong>Признаём</strong><p>если ответа нет в базе — говорим прямо</p></div></div>
+        </div>
+      </section>
+
+      <section class="consultant-section section-pad" id="consultant">
+        <div class="container">
+          <div class="section-heading consultant-heading reveal">
+            <div>
+              <div class="eyebrow"><span>02</span> Ваш персональный ботаник</div>
+              <h2>Спросите<br /><em>по-человечески.</em></h2>
+            </div>
+            <p>Напишите, что происходит: «в комнате мало света», «хочу растение в подарок», «как спасти фикус». Консультант ответит по учебной базе XROM и не будет фантазировать.</p>
+          </div>
+
+          <div class="consultant-shell reveal reveal-delay-1">
+            <aside class="consultant-sidebar">
+              <div class="assistant-profile">
+                <div class="assistant-avatar"><span>✳</span><i></i></div>
+                <div><strong>Лея</strong><small>консультант XROM</small></div>
+                <span class="online-status">online</span>
+              </div>
+              <div class="sidebar-rule"></div>
+              <p class="sidebar-label">Попробуйте спросить</p>
+              <div class="suggestion-list">
+                <button data-prompt="Как часто поливать сансевиерию?">Как часто поливать сансевиерию?</button>
+                <button data-prompt="Подбери растение для тёмной комнаты">Подбери растение для тёмной комнаты</button>
+                <button data-prompt="Почему у фикуса опадают листья?">Почему у фикуса опадают листья?</button>
+                <button data-prompt="Есть ли у вас растение для офиса?">Есть ли растение для офиса?</button>
+              </div>
+              <div class="sidebar-foot"><span>База знаний v.0.3</span><span>учебный режим</span></div>
+            </aside>
+
+            <div class="chat-panel">
+              <div class="chat-topbar"><div><span class="chat-kicker">XROM / CARE DESK</span><strong>Чат с консультантом</strong></div><span class="chat-encrypted">● база подключена</span></div>
+              <div class="chat-messages" id="chat-messages" aria-live="polite">
+                <div class="message-row assistant-row">
+                  <div class="message-avatar">Л</div>
+                  <div class="message-bubble assistant-bubble"><span class="message-time">Лея · только что</span><p>Привет! Я Лея, консультант XROM. Расскажите, где будет жить растение и что вас беспокоит — начнём с простого.</p><div class="message-tags"><span>уход</span><span>подбор</span><span>диагностика</span></div></div>
+                </div>
+              </div>
+              <div class="chat-bottom">
+                <form class="chat-form" id="chat-form">
+                  <input id="chat-input" type="text" autocomplete="off" placeholder="Например: растение для ванной без окна" aria-label="Ваш вопрос" />
+                  <button type="submit" aria-label="Отправить вопрос"><span>↗</span></button>
+                </form>
+                <div class="chat-disclaimer"><span>⌁</span> Ответы основаны на учебной базе. Цены и остатки — учебные.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="catalog-section section-pad" id="catalog">
+        <div class="container">
+          <div class="section-heading catalog-heading reveal">
+            <div><div class="eyebrow"><span>03</span> Каталог питомника</div><h2>Под рукой —<br /><em>живые решения.</em></h2></div>
+            <div class="catalog-heading-side"><p>Цены и остатки ниже указаны в учебном режиме для демонстрации PoC.</p><button class="text-button" data-action="download">Скачать прайс <span>↓</span></button></div>
+          </div>
+          <div class="filter-row reveal" role="tablist" aria-label="Фильтр каталога">
+            <button class="filter-button active" data-filter="all">Все растения <span>06</span></button>
+            <button class="filter-button" data-filter="easy">Легко ухаживать <span>03</span></button>
+            <button class="filter-button" data-filter="shade">Для тени <span>02</span></button>
+            <button class="filter-button" data-filter="pet">Безопасны для питомцев <span>02</span></button>
+          </div>
+          <div class="product-grid reveal reveal-delay-1" id="product-grid">
+            <article class="product-card" data-category="easy shade" data-product="Сансевиерия Moonshine" data-price="1290">
+              <div class="product-image image-sansevieria"><span class="product-label">новинка</span><button class="favorite-button" aria-label="Добавить в избранное">♡</button><img src="https://images.unsplash.com/photo-1593482892290-f54927ae2b2d?auto=format&fit=crop&w=700&q=82" alt="Сансевиерия в кашпо" loading="lazy" /></div>
+              <div class="product-info"><div class="product-meta"><span>XS / S</span><span>арт. 001</span></div><h3>Сансевиерия<br /><em>Moonshine</em></h3><p>Выживет даже у забывчивого владельца.</p><div class="product-bottom"><strong>1 290 ₽</strong><button class="add-button" data-add="Сансевиерия Moonshine" data-price="1290">В корзину <span>+</span></button></div></div>
+            </article>
+            <article class="product-card" data-category="easy pet" data-product="Пеперомия Hope" data-price="1490">
+              <div class="product-image image-peperomia"><span class="product-label product-label-cream">pet friendly</span><button class="favorite-button" aria-label="Добавить в избранное">♡</button><img src="https://images.unsplash.com/photo-1614594975525-e45190c55d0b?auto=format&fit=crop&w=700&q=82" alt="Круглые листья пеперомии" loading="lazy" /></div>
+              <div class="product-info"><div class="product-meta"><span>S</span><span>арт. 014</span></div><h3>Пеперомия<br /><em>Hope</em></h3><p>Компактная, графичная, дружит с котами.</p><div class="product-bottom"><strong>1 490 ₽</strong><button class="add-button" data-add="Пеперомия Hope" data-price="1490">В корзину <span>+</span></button></div></div>
+            </article>
+            <article class="product-card" data-category="shade pet" data-product="Калатея Orbifolia" data-price="2690">
+              <div class="product-image image-calathea"><span class="product-label product-label-red">мало осталось</span><button class="favorite-button" aria-label="Добавить в избранное">♡</button><img src="https://images.unsplash.com/photo-1598880940080-ff9a29891b85?auto=format&fit=crop&w=700&q=82" alt="Калатея с полосатыми листьями" loading="lazy" /></div>
+              <div class="product-info"><div class="product-meta"><span>M</span><span>арт. 027</span></div><h3>Калатея<br /><em>Orbifolia</em></h3><p>Любит влажность и мягкий рассеянный свет.</p><div class="product-bottom"><strong>2 690 ₽</strong><button class="add-button" data-add="Калатея Orbifolia" data-price="2690">В корзину <span>+</span></button></div></div>
+            </article>
+            <article class="product-card" data-category="easy" data-product="Фикус Elastica" data-price="3190">
+              <div class="product-image image-ficus"><span class="product-label product-label-cream">хит</span><button class="favorite-button" aria-label="Добавить в избранное">♡</button><img src="https://images.unsplash.com/photo-1614594575922-a4f0c9e7ad97?auto=format&fit=crop&w=700&q=82" alt="Фикус эластика" loading="lazy" /></div>
+              <div class="product-info"><div class="product-meta"><span>M / L</span><span>арт. 032</span></div><h3>Фикус<br /><em>Elastica</em></h3><p>Большой лист, быстрый эффект для интерьера.</p><div class="product-bottom"><strong>3 190 ₽</strong><button class="add-button" data-add="Фикус Elastica" data-price="3190">В корзину <span>+</span></button></div></div>
+            </article>
+          </div>
+          <div class="catalog-more"><span>Показаны 4 из 36 учебных позиций</span><button class="button button-dark" data-action="show-more">Открыть весь каталог <span>↗</span></button></div>
+        </div>
+      </section>
+
+      <section class="how-section section-pad" id="how-it-works">
+        <div class="container">
+          <div class="section-heading reveal"><div><div class="eyebrow light-eyebrow"><span>04</span> Не магия, а процесс</div><h2>Помощь, в которой<br /><em>видно логику.</em></h2></div><p>Мы строим консультацию вокруг реальных вводных: пространства, привычек и требований к растению. Поэтому рекомендации не оторваны от жизни.</p></div>
+          <div class="steps-grid reveal reveal-delay-1">
+            <article class="step-card"><div class="step-number">01</div><div class="step-icon">◌</div><h3>Опишите ситуацию</h3><p>Свет, влажность, домашние животные или просто «хочу красиво» — принимаем обычную человеческую формулировку.</p><a href="#consultant" data-scroll="consultant">Попробовать <span>↗</span></a></article>
+            <article class="step-card step-card-featured"><div class="step-number">02</div><div class="step-icon">✳</div><h3>Ответим по фактам</h3><p>Консультант достаёт ответ из базы знаний питомника: без выдуманных цен, наличия и обещаний «точно выживет».</p><span class="step-status"><i></i> база подключена</span></article>
+            <article class="step-card"><div class="step-number">03</div><div class="step-icon">↗</div><h3>Если не знаем — скажем</h3><p>Не нашли ответ? Оставьте новый вопрос. Он попадёт команде и станет частью следующего обновления базы.</p><button class="text-button text-button-light" data-scroll="consultant">Задать новый вопрос <span>↗</span></button></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="about-section section-pad" id="about">
+        <div class="container about-grid">
+          <div class="about-image reveal"><img src="https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=1100&q=85" alt="Растения в оранжерее" loading="lazy" /><div class="about-caption"><span>XROM / 2026</span><strong>Растим с вниманием<br />к деталям.</strong></div></div>
+          <div class="about-content reveal reveal-delay-1"><div class="eyebrow"><span>05</span> Питомник и система</div><h2>Мы выращиваем<br /><em>не только растения.</em></h2><p>За XROM Group стоит питомник, команда и каталог, который постоянно дополняется живыми наблюдениями. Консультант — это интерфейс к этой экспертизе, а не говорящая витрина.</p><div class="stat-row"><div><strong>12</strong><span>лет выращиваем</span></div><div><strong>240+</strong><span>позиций в базе</span></div><div><strong>3</strong><span>формата помощи</span></div></div><button class="button button-dark" data-action="about">Узнать о XROM <span>↗</span></button></div>
+        </div>
+      </section>
+
+      <section class="feedback-section section-pad">
+        <div class="container feedback-grid">
+          <div class="feedback-heading reveal"><div class="eyebrow"><span>06</span> Живой вопрос</div><h2>Не нашли<br /><em>свой сценарий?</em></h2><p>Оставьте его нам — даже если он появился прямо во время демо. Так консультант становится полезнее с каждым диалогом.</p></div>
+          <form class="feedback-form reveal reveal-delay-1" id="question-form"><label for="question">Ваш вопрос</label><textarea id="question" rows="3" placeholder="Например: уезжаю на две недели, какое растение переживёт это без полива?"></textarea><div class="form-row"><label class="consent"><input type="checkbox" checked /> <span>Учебная отправка, без спама</span></label><button class="button button-lime" type="submit">Отправить команде <span>↗</span></button></div><p class="form-success" id="form-success" hidden>Вопрос записан — спасибо. В демо он добавлен в очередь команды.</p></form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-main">
+        <div class="footer-brand"><a class="brand brand-footer" href="#top"><span class="brand-mark">X</span><span class="brand-copy"><strong>XROM</strong><small>GROUP / PLANTS</small></span></a><p>Растения, которые<br />приживаются в жизни.</p></div>
+        <div class="footer-links"><div><span>Навигация</span><a href="#catalog">Каталог</a><a href="#consultant">Консультант</a><a href="#how-it-works">Как это работает</a></div><div><span>Контакты</span><a href="mailto:hello@xrom.group">hello@xrom.group</a><a href="tel:+78005550192">8 800 555-01-92</a><p>Ростов-на-Дону<br />учебный адрес</p></div></div>
+        <div class="footer-subscribe"><span>Получать новости питомника</span><form id="subscribe-form"><input type="email" placeholder="Ваш e-mail" aria-label="Ваш e-mail" required /><button type="submit" aria-label="Подписаться">↗</button></form><small id="subscribe-success">Раз в месяц. Никакого спама.</small></div>
+      </div>
+      <div class="container footer-bottom"><span>© 2026 XROM GROUP</span><span>Учебный прототип · цены и остатки условные</span><div><a href="#top">Политика</a><a href="#top">Вверх ↑</a></div></div>
+    </footer>
+
+    <div class="toast" id="toast" role="status"><span class="toast-icon">✓</span><span id="toast-text">Добавлено в корзину</span></div>
+    <script src="app.js"></script>
+  </body>
+</html>

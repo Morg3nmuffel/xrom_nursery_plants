@@ -1,0 +1,9 @@
+{
+  "register_id": "demo-pos-01",
+  "receipt_id": "demo-0001",
+  "status": "paid",
+  "items": [
+    { "plant_id": "hydrangea-paniculata-limelight", "quantity": 2 },
+    { "plant_id": "thuja-occidentalis-smaragd", "quantity": 1 }
+  ]
+}
