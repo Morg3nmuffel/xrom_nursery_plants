@@ -17,8 +17,8 @@ import {
   Minus,
   X,
 } from 'lucide-react';
-import { api, Brand, Badge, Empty, stages, statuses, careLabels, num, dateTime } from './shared';
-import { Modal, PanelHead, PlantTable, SearchBox, TaskCard, PlantIcon } from './components';
+import { api, Brand, Badge, Empty, stages, num, dateTime } from './shared';
+import { Modal, PanelHead, PlantTable, SearchBox, TaskBoard, TaskDetails, Care, PlantIcon } from './components';
 import { BatchForm, MaterialForm, StockForm } from './forms';
 import { CatalogForm, PriceForm, EmployeeForm, RemoveForm, TaskForm } from './admin-forms';
 
@@ -233,23 +233,7 @@ function Tasks({ data, open }) {
         </select>
         </div>
       </Heading>
-      <div className="kanban">
-        {Object.entries(statuses).map(([code, label]) => (
-          <section className={'lane ' + code} key={code}>
-            <h2>
-              <span className={'dot ' + code} />
-              {label}
-              <i>{list.filter((t) => t.status === code).length}</i>
-            </h2>
-            {list
-              .filter((t) => t.status === code)
-              .map((t) => (
-                <TaskCard task={t} key={t.id} onClick={(v) => open('task', v)} />
-              ))}
-            {!list.some((t) => t.status === code) && <Empty>Задач нет.</Empty>}
-          </section>
-        ))}
-      </div>
+      <TaskBoard tasks={list} onSelect={(task) => open('task', task)} />
     </>
   );
 }
@@ -424,32 +408,7 @@ function Catalog({ data, open }) {
   );
 }
 function Details({ type, item }) {
-  if (type === 'task')
-    return (
-      <div className="details">
-        <Badge value={item.status} labels={statuses} />
-        <h3>{item.title}</h3>
-        {item.batch_id != null && <p>
-          {item.plant_name} · {item.quantity} шт.
-        </p>}
-        <dl>
-          <dt>Исполнитель</dt>
-          <dd>{item.assignee_name}</dd>
-          {item.location && <><dt>Место</dt><dd>{item.location}</dd></>}
-          <dt>Срок</dt>
-          <dd>{item.due_on.split('-').reverse().join('.')}</dd>
-          {item.completed_at && (
-            <>
-              <dt>Выполнено</dt>
-              <dd>{dateTime(item.completed_at)}</dd>
-            </>
-          )}
-        </dl>
-        <h4>Что сделать</h4>
-        <p>{item.instructions}</p>
-        <Care care={item.care} />
-      </div>
-    );
+  if (type === 'task') return <TaskDetails task={item} />;
   return (
     <div className="details">
       <PlantIcon id={item.id} />
@@ -474,16 +433,6 @@ function Details({ type, item }) {
       )}
     </div>
   );
-}
-function Care({ care }) {
-  return Object.entries(careLabels)
-    .filter(([k]) => care?.[k])
-    .map(([k, label]) => (
-      <React.Fragment key={k}>
-        <h4>{label}</h4>
-        <p>{care[k]}</p>
-      </React.Fragment>
-    ));
 }
 const formTitles = {
   employee: 'Новый сотрудник',

@@ -10,6 +10,7 @@ import { ApiError } from '../backend/validation.mjs';
 const files = new Map([
   ['/login.js', ['login.js', 'text/javascript']],
   ['/ui.js', ['ui.js', 'text/javascript']],
+  ['/employee.js', ['employee.js', 'text/javascript']],
   ['/style.css', ['style.css', 'text/css']],
   ['/greenhouse.jpg', ['greenhouse.jpg', 'image/jpeg']],
 ]);
@@ -47,7 +48,7 @@ export function createWebServer({ urls, secureCookie = false }) {
     if (token) headers.Authorization = 'Bearer ' + token;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     try {
-      const response = await fetch(new URL('/api/admin' + path, urls[service]), {
+      const response = await fetch(new URL(path, urls[service]), {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
@@ -65,10 +66,30 @@ export function createWebServer({ urls, secureCookie = false }) {
       );
     }
   }
-  function revoke(tokens) {
+  function revoke({ role, tokens }) {
+    const path = role === 'employee' ? '/api/tasks/logout' : '/api/admin/logout';
     return Promise.allSettled(
-      Object.entries(tokens).map(([service, token]) => upstream(service, '/logout', 'POST', token)),
+      Object.entries(tokens).map(([service, token]) => upstream(service, path, 'POST', token)),
     );
+  }
+  async function authenticate(role, credentials) {
+    const path = role === 'employee' ? '/api/tasks/login' : '/api/admin/login';
+    const services = role === 'employee' ? ['tasks'] : ['plants', 'tasks', 'store'];
+    const tokens = {};
+    try {
+      for (const service of services) {
+        const result = await upstream(service, path, 'POST', null, credentials);
+        if (result.status === 401)
+          throw new ApiError(401, 'invalid_credentials', 'Проверьте логин и пароль.');
+        if (result.status !== 200 || !result.data.access_token)
+          throw new ApiError(503, 'login_unavailable', 'Вход временно недоступен.');
+        tokens[service] = result.data.access_token;
+      }
+      return tokens;
+    } catch (error) {
+      await revoke({ role, tokens });
+      throw error;
+    }
   }
   function prune(map, now) {
     for (const [key, item] of map) if (item.expires <= now) map.delete(key);
@@ -93,78 +114,77 @@ export function createWebServer({ urls, secureCookie = false }) {
         throw new ApiError(403, 'origin_denied', 'Недопустимый источник запроса.');
       }
     }
-    if (pathname === '/api/login' && method === 'POST') {
+    const isEmployeeLogin = pathname === '/api/employee/login';
+    if ((pathname === '/api/login' || isEmployeeLogin) && method === 'POST') {
       prune(attempts, now);
       prune(sessions, now);
-      const ip = req.socket.remoteAddress;
-      const attempt = attempts.get(ip) || { count: 0, expires: now + 60_000 };
-      if (attempt.count >= 12) throw new ApiError(429, 'too_many_attempts', 'Повторите вход через минуту.');
       const { username, password } = await readJson(req);
       if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
         throw new ApiError(400, 'credentials_required', 'Введите логин и пароль.');
       }
+      const ip = req.socket.remoteAddress;
+      const attempt = attempts.get(ip) || { count: 0, expires: now + 60_000 };
+      if (attempt.count >= 12) throw new ApiError(429, 'too_many_attempts', 'Повторите вход через минуту.');
       attempt.count++;
       attempts.set(ip, attempt);
-      const tokens = {};
-      try {
-        for (const service of ['plants', 'tasks', 'store']) {
-          const result = await upstream(service, '/login', 'POST', null, { username, password });
-          if (result.status === 401)
-            throw new ApiError(
-              401,
-              'invalid_credentials',
-              'Вход доступен администратору. Проверьте логин и пароль.',
-            );
-          if (result.status !== 200 || !result.data.access_token)
-            throw new ApiError(503, 'login_unavailable', 'Проверьте конфигурацию входа трёх сервисов.');
-          tokens[service] = result.data.access_token;
-        }
-      } catch (error) {
-        await revoke(tokens);
-        throw error;
-      }
+      const role = isEmployeeLogin ? 'employee' : 'admin';
+      const tokens = await authenticate(role, { username, password });
       attempts.delete(ip);
       if (session) {
         sessions.delete(sid);
-        await revoke(session.tokens);
+        await revoke(session);
       }
       const id = randomBytes(32).toString('hex');
-      sessions.set(id, { username, tokens, expires: now + sessionMs });
+      sessions.set(id, { username, role, tokens, expires: now + sessionMs });
       res.setHeader('Set-Cookie', cookie(id, sessionMs / 1000));
       return sendJson(res, 200, { username });
     }
-    if (pathname.startsWith('/api/') || pathname === '/ui.js') {
-      if (!session) throw new ApiError(401, 'unauthorized', 'Войдите под учётной записью администратора.');
-      if (pathname === '/api/session' && method === 'GET')
-        return sendJson(res, 200, { username: session.username });
+    if (pathname.startsWith('/api/') || pathname === '/ui.js' || pathname === '/employee.js') {
+      if (!session) throw new ApiError(401, 'unauthorized', 'Войдите в питомник.');
       if (pathname === '/api/logout' && method === 'POST') {
         sessions.delete(sid);
         res.setHeader('Set-Cookie', cookie('', 0));
-        await revoke(session.tokens);
+        await revoke(session);
         return sendJson(res, 200, { logged_out: true });
       }
-      const parts = /^\/api\/(plants|tasks|store)(\/.*)$/.exec(pathname);
-      if (
-        parts &&
-        routes.some(
-          ([service, verb, pattern]) => service === parts[1] && verb === method && pattern.test(parts[2]),
-        )
-      ) {
-        const body = method === 'GET' || method === 'DELETE' ? undefined : await readJson(req);
-        const result = await upstream(parts[1], parts[2] + search, method, session.tokens[parts[1]], body);
+      const employeeRoute = pathname.startsWith('/api/employee/') || pathname === '/employee.js';
+      const requiredRole = employeeRoute ? 'employee' : 'admin';
+      if (session.role !== requiredRole)
+        throw new ApiError(403, 'forbidden', 'Этот раздел недоступен для вашей учётной записи.');
+
+      async function forward(service, path, body) {
+        const result = await upstream(service, path, method, session.tokens[service], body);
         if (result.status === 401) {
           sessions.delete(sid);
           res.setHeader('Set-Cookie', cookie('', 0));
-          await revoke(session.tokens);
+          await revoke(session);
         }
         return sendJson(res, result.status, result.data);
+      }
+      if (employeeRoute) {
+        if (pathname === '/api/employee/tasks' && method === 'GET') return forward('tasks', '/api/tasks');
+        const taskAction = /^\/api\/employee(\/tasks\/[1-9]\d*\/(start|complete))$/.exec(pathname);
+        if (taskAction && method === 'POST') return forward('tasks', '/api' + taskAction[1]);
+      } else {
+        if (pathname === '/api/session' && method === 'GET')
+          return sendJson(res, 200, { username: session.username });
+        const parts = /^\/api\/(plants|tasks|store)(\/.*)$/.exec(pathname);
+        if (
+          parts &&
+          routes.some(
+            ([service, verb, pattern]) => service === parts[1] && verb === method && pattern.test(parts[2]),
+          )
+        ) {
+          const body = method === 'GET' || method === 'DELETE' ? undefined : await readJson(req);
+          return forward(parts[1], '/api/admin' + parts[2] + search, body);
+        }
       }
     }
     if (method === 'GET' && pathname === '/') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.end(
         '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Питомник · Панель управления</title><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script defer src="/' +
-          (session ? 'ui' : 'login') +
+          (session?.role === 'employee' ? 'employee' : session ? 'ui' : 'login') +
           '.js"></script></body></html>',
       );
     }

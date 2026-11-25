@@ -17,7 +17,7 @@ import { createWebServer } from '../server.mjs';
 const roster = JSON.parse(readFileSync(new URL('../../backend/examples/task-employees.json', import.meta.url)));
 const config = { adminUser: 'admin', adminPassword: 'test-admin', posToken: 'test-pos-key', syncToken: 'test-feed' };
 
-async function boot(dir) {
+async function boot(dir, clock) {
   const db = openDatabase(join(dir, 'plants.sqlite'));
   const store = openMaterials(join(dir, 'materials.sqlite'));
   const servers = [];
@@ -28,7 +28,7 @@ async function boot(dir) {
     return 'http://127.0.0.1:' + server.address().port;
   }
   const plants = await listen(createService(db, config));
-  const tasks = await listen(createTasksService(db, { ...config, employees: roster, intervalMs: 100000 }));
+  const tasks = await listen(createTasksService(db, { ...config, employees: roster, intervalMs: 100000, clock }));
   const warehouse = await listen(createMaterialsService(store, { ...config, plantUrl: plants, intervalMs: 100000 }));
   const web = await listen(createWebServer({ urls: { plants, tasks, store: warehouse } }));
   let cookie = '';
@@ -43,7 +43,7 @@ async function boot(dir) {
   }
   await call('tasks/employees', 'POST', {}, 401);
   await call('login', 'POST', { username: 'admin', password: config.adminPassword });
-  return { call, db, store, tasks, async close() {
+  return { call, db, store, tasks, web, async close() {
     for (const server of servers.reverse()) await new Promise(resolve => server.close(resolve));
     db.close(); store.close();
   } };
@@ -113,6 +113,93 @@ test('admin creates and deletes through the web gateway; database restarts prese
     await app.call('store/purchases', 'POST', { ...purchase, operation_id: 'another' }, 422);
     assert.deepEqual(app.db.prepare('PRAGMA foreign_key_check').all(), []);
     assert.deepEqual(app.store.prepare('PRAGMA foreign_key_check').all(), []);
+  } finally {
+    await app.close();
+    dir.remove();
+  }
+});
+
+test('a staff account created by an admin gets only its own tasks and ten recent completions after restart', async () => {
+  const dir = mkdtempDisposableSync(join(tmpdir(), 'nursery-employee-'));
+  let now = Date.parse('2026-11-21T10:00:00Z');
+  const clock = () => new Date(now);
+  let app = await boot(dir.path, clock);
+  let cookie;
+  async function employeeRequest(path, { method = 'GET', body } = {}) {
+    return fetch(app.web + path, {
+      method,
+      headers: {
+        ...(cookie ? { Cookie: cookie } : {}),
+        Origin: app.web, 'Content-Type': 'application/json', 'X-Nursery-Request': '1',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+  const credentials = { username: 'new-worker', password: 'test-worker-password' };
+  async function login() {
+    const response = await employeeRequest('/api/employee/login', { method: 'POST', body: credentials });
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { username: credentials.username });
+    const header = response.headers.get('set-cookie');
+    assert.match(header, /HttpOnly/);
+    cookie = header.split(';')[0];
+  }
+  async function board(path = '/api/employee/tasks') {
+    const response = await employeeRequest(path);
+    assert.equal(response.status, 200);
+    return response.json();
+  }
+  const act = (task, action) => employeeRequest('/api/employee/tasks/' + task.id + '/' + action, {
+    method: 'POST',
+  });
+  try {
+    assert.equal((await employeeRequest('/employee.js')).status, 401);
+    assert.equal((await employeeRequest('/api/employee/tasks')).status, 401);
+    await app.call('employee/tasks', 'GET', undefined, 403);
+    const worker = await app.call('tasks/employees', 'POST', { name: 'Садовник', ...credentials }, 201);
+    const tasks = [];
+    for (let i = 0; i < 14; i++) {
+      tasks.push(await app.call('tasks/tasks', 'POST',
+        { title: 'Задание ' + i, assignee_id: worker.id }, 201));
+    }
+    const other = await app.call('tasks/tasks', 'POST', { title: 'Задача коллеги', assignee_id: 1 }, 201);
+    await login();
+    assert.match(await (await employeeRequest('/')).text(), /employee\.js/);
+    assert.equal((await employeeRequest('/employee.js')).status, 200);
+    for (const path of ['/ui.js', '/api/plants/inventory', '/api/tasks/tasks', '/api/store/materials'])
+      assert.equal((await employeeRequest(path)).status, 403);
+    const own = await board('/api/employee/tasks?scope=team');
+    assert.equal(own.employee.id, worker.id);
+    assert.deepEqual(own.items.map(task => task.id), tasks.map(task => task.id));
+    assert.equal((await act(other, 'start')).status, 403);
+    const premature = await act(tasks[0], 'complete');
+    assert.equal(premature.status, 409);
+    assert.equal((await premature.json()).error.code, 'task_not_started');
+
+    const completed = tasks.slice(0, 12).reverse();
+    for (const task of completed) {
+      now += 6 * 60 * 60 * 1000;
+      const started = await act(task, 'start');
+      assert.equal(started.status, 200);
+      assert.equal((await started.json()).status, 'in_progress');
+      const finished = await act(task, 'complete');
+      assert.equal(finished.status, 200);
+      assert.equal((await finished.json()).status, 'done');
+    }
+    await act(tasks[12], 'start');
+    assert.equal((await employeeRequest('/api/logout', { method: 'POST' })).status, 200);
+    assert.equal((await employeeRequest('/api/employee/tasks')).status, 401);
+    assert.equal(app.db.prepare('SELECT count(*) AS total FROM task_assignments WHERE completed_at IS NOT NULL').get().total, 12);
+    await app.close();
+    app = await boot(dir.path, clock);
+    await login();
+    const { items } = await board();
+    assert.deepEqual(items.filter(task => task.status === 'done').map(task => task.id),
+      completed.slice(-10).reverse().map(task => task.id));
+    assert.equal(items.find(task => task.id === tasks[12].id).status, 'in_progress');
+    assert.equal(items.find(task => task.id === tasks[13].id).status, 'todo');
+    await app.call('tasks/employees/' + worker.id, 'DELETE');
+    assert.equal((await employeeRequest('/api/employee/tasks')).status, 401);
   } finally {
     await app.close();
     dir.remove();

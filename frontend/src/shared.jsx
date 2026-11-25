@@ -21,7 +21,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   });
   const data = await response.json();
   if (!response.ok) {
-    if (response.status === 401 && path !== 'login') location.replace('/');
+    if (response.status === 401 && !['login', 'employee/login'].includes(path)) location.replace('/');
     throw new Error(data.error?.message || 'Не удалось выполнить запрос.');
   }
   return data;

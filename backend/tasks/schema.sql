@@ -23,6 +23,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS task_auto_per_day ON task_assignments(batch_id
 CREATE INDEX IF NOT EXISTS task_completions_by_day
 ON task_assignments(completed_on, batch_id) WHERE completed_on IS NOT NULL;
 
+CREATE INDEX IF NOT EXISTS task_recent_completions_by_assignee
+ON task_assignments(assignee_id, completed_at DESC, id DESC)
+WHERE completed_at IS NOT NULL AND removed_on IS NULL;
+
 CREATE TABLE IF NOT EXISTS employees (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL,

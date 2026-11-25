@@ -4,6 +4,7 @@ import { Eye, EyeOff, LockKeyhole, UserRound, Leaf } from 'lucide-react';
 import { Brand, api } from './shared';
 
 function Login() {
+  const [role, setRole] = useState('admin');
   const [shown, show] = useState(false),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -13,7 +14,7 @@ function Login() {
     setBusy(true);
     setError('');
     try {
-      await api('login', {
+      await api(role === 'employee' ? 'employee/login' : 'login', {
         method: 'POST',
         body: { username: form.get('username').trim(), password: form.get('password') },
       });
@@ -44,8 +45,30 @@ function Login() {
             <LockKeyhole size={24} />
           </span>
           <h1>Вход в питомник</h1>
-          <p>Войдите под учётной записью администратора.</p>
           <form onSubmit={submit}>
+            <fieldset className="login-roles" disabled={busy}>
+              <legend>Тип учётной записи</legend>
+              {[
+                ['admin', 'Администратор'],
+                ['employee', 'Сотрудник'],
+              ].map(([value, label]) => (
+                <label key={value}>
+                  <input
+                    type="radio"
+                    name="role"
+                    checked={role === value}
+                    onChange={() => {
+                      setRole(value);
+                      setError('');
+                    }}
+                  />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </fieldset>
+            {role === 'employee' && (
+              <p className="login-hint">Введите логин и пароль, выданные администратором.</p>
+            )}
             <label>
               Логин
               <div className="input-icon">
@@ -61,11 +84,11 @@ function Login() {
               </div>
             </label>
             <div>
-              <label htmlFor="admin-password">Пароль</label>
+              <label htmlFor="login-password">Пароль</label>
               <div className="input-icon">
                 <LockKeyhole size={17} />
                 <input
-                  id="admin-password"
+                  id="login-password"
                   name="password"
                   type={shown ? 'text' : 'password'}
                   autoComplete="current-password"

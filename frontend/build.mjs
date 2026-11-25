@@ -1,6 +1,6 @@
 import { build } from 'esbuild';
 await build({
-  entryPoints: { login: 'src/login.jsx', ui: 'src/app.jsx' },
+  entryPoints: { login: 'src/login.jsx', ui: 'src/app.jsx', employee: 'src/employee.jsx' },
   outdir: 'public',
   bundle: true,
   minify: true,

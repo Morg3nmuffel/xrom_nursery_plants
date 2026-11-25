@@ -122,6 +122,7 @@ test('the v2 upgrade preserves completed tasks and publishes only new plantings 
     const oldPlanner = new TaskPlanner(db, options);
     oldPlanner.generate();
     const [task] = oldPlanner.list().items;
+    oldPlanner.changeStatus(task.id, task.assignee_id, 'start');
     const completed = oldPlanner.changeStatus(task.id, task.assignee_id, 'complete');
     db.close();
     db = openDatabase(filename);
@@ -202,6 +203,7 @@ test('one registered planting produces one employee task and one warehouse opera
     assert.ok(task.care.watering);
     const owner = await login(taskUrl, '/api/tasks/login', employees.find(employee => employee.id === task.assignee_id));
     const endpoint = `/api/tasks/${task.id}/complete`;
+    assert.equal((await call(taskUrl, `/api/tasks/${task.id}/start`, 'POST', owner)).data.status, 'in_progress');
     const closed = await call(taskUrl, endpoint, 'POST', owner);
     assert.equal(closed.data.status, 'done');
     assert.deepEqual(await call(taskUrl, endpoint, 'POST', owner), closed);

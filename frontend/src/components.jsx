@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { X, Search, Leaf, Trees, Flower2, MapPin, ChevronRight } from 'lucide-react';
-import { Badge, Empty, num } from './shared';
+import { Badge, Empty, careLabels, dateTime, num, statuses } from './shared';
 
 export function Modal({ title, close, children }) {
   const ref = useRef(null),
@@ -111,25 +111,112 @@ export function SearchBox({ value, onChange, placeholder }) {
     </label>
   );
 }
-export function TaskCard({ task, onClick }) {
+function TaskCard({ task, onClick, personal }) {
   return (
     <button className="task-card" onClick={() => onClick(task)}>
       <strong>{task.title}</strong>
       {task.plant_name && <span>{task.plant_name}</span>}
-      {task.location && <small>
-        <MapPin size={13} />
-        {task.location}
-      </small>}
+      {task.location && (
+        <small>
+          <MapPin size={13} />
+          {task.location}
+        </small>
+      )}
       <div className="task-foot">
-        <span className="person">
-          <i>{task.assignee_name[0]}</i>
-          {task.assignee_name}
+        {!personal && (
+          <span className="person">
+            <i>{task.assignee_name[0]}</i>
+            {task.assignee_name}
+          </span>
+        )}
+        <span>
+          {personal && task.completed_at
+            ? 'Выполнено ' + dateTime(task.completed_at)
+            : (personal ? 'Срок ' : '') + task.due_on.split('-').reverse().slice(0, 2).join('.')}
         </span>
-        <span>{task.due_on.split('-').reverse().slice(0, 2).join('.')}</span>
       </div>
     </button>
   );
 }
+export function TaskBoard({ tasks, onSelect, personal = false, loading = false }) {
+  return (
+    <div className="kanban">
+      {Object.entries(statuses).map(([code, label]) => {
+        const items = tasks.filter((task) => task.status === code);
+        return (
+          <section className={'lane ' + code} key={code}>
+            <h2>
+              <span className={'dot ' + code} />
+              {label}
+              <i>{items.length}</i>
+            </h2>
+            {items.map((task) => (
+              <TaskCard task={task} key={task.id} onClick={onSelect} personal={personal} />
+            ))}
+            {items.length === 0 && <Empty>{loading ? 'Загрузка…' : 'Задач нет.'}</Empty>}
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Care({ care }) {
+  return Object.entries(careLabels)
+    .filter(([key]) => care?.[key])
+    .map(([key, label]) => (
+      <React.Fragment key={key}>
+        <h4>{label}</h4>
+        <p>{care[key]}</p>
+      </React.Fragment>
+    ));
+}
+
+export function TaskDetails({ task }) {
+  return (
+    <div className="details">
+      <Badge value={task.status} labels={statuses} />
+      <h3>{task.title}</h3>
+      {task.batch_id != null && (
+        <p>
+          {task.plant_name} · {task.quantity} шт.
+        </p>
+      )}
+      <dl>
+        <dt>Исполнитель</dt>
+        <dd>{task.assignee_name}</dd>
+        {task.location && (
+          <>
+            <dt>Место</dt>
+            <dd>{task.location}</dd>
+          </>
+        )}
+        <dt>Срок</dt>
+        <dd>{task.due_on.split('-').reverse().join('.')}</dd>
+        {task.started_at && (
+          <>
+            <dt>Начато</dt>
+            <dd>{dateTime(task.started_at)}</dd>
+          </>
+        )}
+        {task.completed_at && (
+          <>
+            <dt>Выполнено</dt>
+            <dd>{dateTime(task.completed_at)}</dd>
+          </>
+        )}
+      </dl>
+      {task.instructions && (
+        <>
+          <h4>Что сделать</h4>
+          <p>{task.instructions}</p>
+        </>
+      )}
+      <Care care={task.care} />
+    </div>
+  );
+}
+
 export function useSubmit(save) {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState('');

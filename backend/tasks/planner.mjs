@@ -141,12 +141,22 @@ export class TaskPlanner {
 
   list(assigneeId = null) {
     const today = this.dateOf(this.clock());
-    const filter = assigneeId === null ? '' : 'AND t.assignee_id = ?';
-    const params = assigneeId === null ? [today] : [today, assigneeId];
+    if (assigneeId !== null) {
+      const rows = this.db.prepare(`${taskRows}
+        WHERE t.assignee_id = ? AND t.removed_on IS NULL
+          AND ((t.completed_at IS NULL AND (i.quantity > 0 OR t.batch_id IS NULL))
+            OR t.id IN (
+              SELECT id FROM task_assignments
+              WHERE assignee_id = ? AND completed_at IS NOT NULL AND removed_on IS NULL
+              ORDER BY completed_at DESC, id DESC LIMIT 10
+            ))
+        ORDER BY t.completed_at DESC, CASE WHEN t.completed_at IS NOT NULL THEN t.id END DESC, t.due_on, t.id`)
+        .all(assigneeId, assigneeId);
+      return { date: today, items: rows.map(formatTask) };
+    }
     const rows = this.db.prepare(`${taskRows}
       WHERE t.removed_on IS NULL AND ((t.completed_at IS NULL AND (i.quantity > 0 OR t.batch_id IS NULL)) OR t.completed_on = ?)
-        ${filter}
-      ORDER BY t.due_on, t.id`).all(...params);
+      ORDER BY t.due_on, t.id`).all(today);
     return { date: today, items: rows.map(formatTask) };
   }
 
@@ -198,6 +208,7 @@ export class TaskPlanner {
         if (task.started_at) return formatTask(task);
         this.db.prepare('UPDATE task_assignments SET started_at = ? WHERE id = ?').run(now.toISOString(), id);
       } else {
+        if (!task.started_at) throw new ApiError(409, 'task_not_started', 'Сначала начните выполнение задачи.');
         this.db.prepare(`UPDATE task_assignments
           SET completed_at = ?, completed_on = ?, completed_details_json = ? WHERE id = ?`)
           .run(now.toISOString(), this.dateOf(now), JSON.stringify(taskDetails(task)), id);
