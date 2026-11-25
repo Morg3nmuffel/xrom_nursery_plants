@@ -1,10 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline/promises';
 import { Writable } from 'node:stream';
+import { parseEnv } from 'node:util';
 import { createWebServer } from './server.mjs';
 
 const base = fileURLToPath(new URL('../backend/', import.meta.url));
@@ -22,8 +24,14 @@ function stop() {
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, stop);
 async function password() {
   if (process.env.NURSERY_DEMO_PASSWORD) return process.env.NURSERY_DEMO_PASSWORD;
+  try {
+    const local = parseEnv(await readFile(new URL('./.env.local-admin', import.meta.url), 'utf8'));
+    if (local.NURSERY_DEMO_PASSWORD?.trim()) return local.NURSERY_DEMO_PASSWORD;
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
   if (!process.stdin.isTTY)
-    throw new Error('Для демонстрации запустите в терминале или задайте NURSERY_DEMO_PASSWORD.');
+    throw new Error('Запустите демоверсию в терминале или задайте NURSERY_DEMO_PASSWORD в .env.local-admin.');
   const rl = createInterface({
     input: process.stdin,
     output: new Writable({
