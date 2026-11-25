@@ -151,11 +151,7 @@ const suggestions = [
 
 function CustomerChat({ onCartChange }) {
   const { data, error, accept } = useConversation('shop/conversation');
-  const stateLabel = {
-    assistant: 'Консультант',
-    pending: 'Ждём ответа администратора',
-    answered: 'В чате администратор',
-  };
+  const waitingForAdmin = data?.state === 'pending';
   async function send(body) {
     const result = await api('shop/conversation', { method: 'POST', body });
     accept(result);
@@ -174,7 +170,9 @@ function CustomerChat({ onCartChange }) {
       <section className="panel chat-panel" aria-label="Чат с питомником">
         {data && (
           <div className="chat-heading">
-            <span className={'chat-state ' + data.state}>{stateLabel[data.state]}</span>
+            <span className={waitingForAdmin ? 'chat-state pending' : 'chat-state'}>
+              {waitingForAdmin ? 'Ждём ответа администратора' : 'Консультант'}
+            </span>
           </div>
         )}
         <ConversationMessages items={data?.items || []} own="customer">
@@ -188,7 +186,7 @@ function CustomerChat({ onCartChange }) {
           <ChatComposer
             send={send}
             label="Ваше сообщение"
-            suggestions={data.state === 'assistant' ? suggestions : []}
+            suggestions={waitingForAdmin ? [] : suggestions}
           />
         )}
       </section>

@@ -178,16 +178,29 @@ test('registered buyers see ready stock and keep cart and full human handoff thr
     await second(path, { status: 403 });
     assert.equal((await second('/api/shop/conversation')).items.length, 0);
 
+    const waiting = await message(buyer, 'Рядом есть окно.', 'clarification-for-admin');
+    assert.equal(waiting.state, 'pending');
+    assert.equal(waiting.items.at(-1).author, 'customer');
+    assert.equal(providerQuestions.length, 3);
+
     const response = { text: 'Уточните, сколько света в этом месте.', request_id: 'answer-one' };
     await admin(path, { method: 'POST', body: response });
     await admin(path, { method: 'POST', body: response });
     const answered = await buyer('/api/shop/conversation');
     assert.equal(answered.state, 'answered');
     assert.equal(answered.items.filter((item) => item.author === 'admin').length, 1);
-    const continued = await message(buyer, 'Свет рассеянный', 'follow-up');
-    assert.equal(continued.state, 'pending');
-    assert.equal(continued.items.at(-1).author, 'customer');
-    assert.equal(providerQuestions.length, 3);
+    const continued = await message(buyer, 'Как поливать гортензию?', 'follow-up');
+    assert.equal(continued.state, 'answered');
+    assert.deepEqual(continued.items.slice(0, answered.items.length), answered.items);
+    assert.equal(continued.items.at(-1).author, 'assistant');
+    assert.ok(continued.items.at(-1).text.includes(source));
+    assert.equal(providerQuestions.length, 4);
+
+    const transferredAgain = await message(buyer, 'Продаёте ли вы аквариумы?', 'second-unknown');
+    assert.equal(transferredAgain.state, 'pending');
+    assert.equal((await admin('/api/plants/conversations')).items[0].id, conversation.id);
+    assert.deepEqual((await admin(path)).items, transferredAgain.items);
+    assert.equal(providerQuestions.length, 5);
 
     const ready = app.inventory.list('ready').items.find((batch) => batch.plant_id === thuja);
     app.inventory.update(ready.id, { version: ready.version, stage: 'growing' });

@@ -207,7 +207,7 @@ export function createShop(db, planner) {
       text,
       knowledge.all(),
       context,
-      state === 'assistant' ? planner : null,
+      state === 'pending' ? null : planner,
       followUp,
     );
     return transaction(db, () => {
@@ -215,7 +215,7 @@ export function createShop(db, planner) {
       const current = conversation.get(id).state;
       const posted = now();
       addMessage.run(id, 'customer', text, posted, requestId, null);
-      const automated = current === 'assistant' || ['cart', 'cart_clarify'].includes(plan.action);
+      const automated = current !== 'pending' || ['cart', 'cart_clarify'].includes(plan.action);
       if (automated) {
         const reply = answer(id, plan);
         addMessage.run(
