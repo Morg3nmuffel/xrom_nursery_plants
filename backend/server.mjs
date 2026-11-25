@@ -1,6 +1,7 @@
 import { createService } from './api.mjs';
 import { importCatalog, inventoryDatabasePath, openDatabase } from './db.mjs';
 import { Inventory } from './inventory.mjs';
+import { createAiPlanner } from './consultant.mjs';
 
 async function main() {
   const [command = 'serve', file] = process.argv.slice(2);
@@ -26,6 +27,11 @@ async function main() {
       adminPassword: process.env.ADMIN_PASSWORD,
       posToken: process.env.POS_TOKEN,
       syncToken: process.env.MATERIAL_SYNC_TOKEN,
+      consultant: createAiPlanner({
+        url: process.env.CONSULTANT_API_URL,
+        model: process.env.CONSULTANT_MODEL,
+        key: process.env.CONSULTANT_API_KEY,
+      }),
       growthIntervalMs: Number(process.env.GROWTH_INTERVAL_MS || 30_000),
     });
     await new Promise((resolve, reject) => {

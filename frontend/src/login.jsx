@@ -5,6 +5,7 @@ import { Brand, api } from './shared';
 
 function Login() {
   const [role, setRole] = useState('admin');
+  const [registering, setRegistering] = useState(false);
   const [shown, show] = useState(false),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false);
@@ -14,9 +15,18 @@ function Login() {
     setBusy(true);
     setError('');
     try {
-      await api(role === 'employee' ? 'employee/login' : 'login', {
+      const endpoint = {
+        admin: 'login',
+        employee: 'employee/login',
+        customer: registering ? 'shop/register' : 'shop/login',
+      }[role];
+      await api(endpoint, {
         method: 'POST',
-        body: { username: form.get('username').trim(), password: form.get('password') },
+        body: {
+          username: form.get('username').trim(),
+          password: form.get('password'),
+          name: form.get('name') || undefined,
+        },
       });
       location.replace('/');
     } catch (err) {
@@ -44,13 +54,14 @@ function Login() {
           <span className="lock-icon">
             <LockKeyhole size={24} />
           </span>
-          <h1>Вход в питомник</h1>
+          <h1>{registering ? 'Регистрация' : 'Вход в питомник'}</h1>
           <form onSubmit={submit}>
             <fieldset className="login-roles" disabled={busy}>
               <legend>Тип учётной записи</legend>
               {[
                 ['admin', 'Администратор'],
                 ['employee', 'Сотрудник'],
+                ['customer', 'Пользователь'],
               ].map(([value, label]) => (
                 <label key={value}>
                   <input
@@ -59,6 +70,7 @@ function Login() {
                     checked={role === value}
                     onChange={() => {
                       setRole(value);
+                      setRegistering(false);
                       setError('');
                     }}
                   />
@@ -68,6 +80,18 @@ function Login() {
             </fieldset>
             {role === 'employee' && (
               <p className="login-hint">Введите логин и пароль, выданные администратором.</p>
+            )}
+            {registering && (
+              <label>
+                Имя
+                <input
+                  name="name"
+                  className="registration-name"
+                  autoComplete="given-name"
+                  maxLength={100}
+                  required
+                />
+              </label>
             )}
             <label>
               Логин
@@ -79,7 +103,10 @@ function Login() {
                   autoCapitalize="none"
                   required
                   autoFocus
-                  maxLength={160}
+                  maxLength={registering ? 40 : 160}
+                  minLength={registering ? 3 : undefined}
+                  pattern={registering ? '[a-zA-Z0-9_.\\-]{3,40}' : undefined}
+                  title={registering ? 'Латинские буквы, цифры, точка, дефис или подчёркивание' : undefined}
                 />
               </div>
             </label>
@@ -91,7 +118,9 @@ function Login() {
                   id="login-password"
                   name="password"
                   type={shown ? 'text' : 'password'}
-                  autoComplete="current-password"
+                  autoComplete={registering ? 'new-password' : 'current-password'}
+                  minLength={registering ? 8 : undefined}
+                  maxLength={registering ? 256 : undefined}
                   required
                 />
                 <button
@@ -110,8 +139,21 @@ function Login() {
               </p>
             )}
             <button className="btn primary wide" disabled={busy}>
-              {busy ? 'Выполняется вход…' : 'Войти'}
+              {busy ? 'Подождите…' : registering ? 'Зарегистрироваться' : 'Войти'}
             </button>
+            {role === 'customer' && (
+              <button
+                className="text-button login-switch"
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setRegistering(!registering);
+                  setError('');
+                }}
+              >
+                {registering ? 'У меня уже есть аккаунт' : 'Создать аккаунт'}
+              </button>
+            )}
           </form>
         </div>
       </section>

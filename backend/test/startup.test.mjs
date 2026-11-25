@@ -19,7 +19,7 @@ if (workerData?.startupTest) {
       assert.equal(planner.generate(), 0);
     }
     assert.equal(db.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
   } finally {
     db.close();
   }

@@ -1,9 +1,10 @@
 import { Inventory } from './inventory.mjs';
+import { createShop } from './shop.mjs';
 import { recordSale } from './sales.mjs';
 import { invalid } from './validation.mjs';
 import { adminAccess, bearerToken, jsonServer, missingRoute, readJson, sameSecret, send, unauthorized } from './http.mjs';
 
-export function createService(db, { adminUser = 'admin', adminPassword, posToken, syncToken, growthIntervalMs = 30_000 }) {
+export function createService(db, { adminUser = 'admin', adminPassword, posToken, syncToken, consultant, growthIntervalMs = 30_000 }) {
   if (!adminUser || !adminPassword || !posToken || adminPassword === posToken) {
     throw new Error('Задайте разные ADMIN_PASSWORD и POS_TOKEN, а также непустой логин администратора.');
   }
@@ -12,6 +13,7 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
   }
   const inventory = new Inventory(db);
   const admin = adminAccess({ adminUser, adminPassword });
+  const shop = createShop(db, consultant);
   if (syncToken && [posToken, adminPassword].includes(syncToken)) throw new Error('Для обмена со складом задайте отдельный MATERIAL_SYNC_TOKEN.');
 
   async function route(req, res) {
@@ -24,6 +26,7 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
     if (pathname === '/api/admin/login' && method === 'POST') {
       return send(res, 200, admin.login(await readJson(req)));
     }
+    if (pathname.startsWith('/api/shop/')) return shop.route(req, res, pathname);
 
     const bearer = bearerToken(req);
     if (pathname === '/api/internal/plantings' && method === 'GET') {
@@ -40,6 +43,9 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
     }
     if (!pathname.startsWith('/api/admin/')) missingRoute();
     admin.require(bearer);
+    if (pathname === '/api/admin/conversations' || pathname.startsWith('/api/admin/conversations/')) {
+      return shop.adminRoute(req, res, pathname);
+    }
     if (pathname === '/api/admin/logout' && method === 'POST') {
       return send(res, 200, admin.logout(bearer));
     }

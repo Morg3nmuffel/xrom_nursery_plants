@@ -68,8 +68,8 @@ export function openDatabase(filename) {
         throw new Error('INVENTORY_DB должен указывать на базу растений.');
       }
       const { user_version: version } = db.prepare('PRAGMA user_version').get();
-      if (version === 5) return;
-      if (version < 0 || version > 5) throw new Error('Неизвестная версия схемы базы учёта.');
+      if (version === 6) return;
+      if (version < 0 || version > 6) throw new Error('Неизвестная версия схемы базы учёта.');
       if (version === 0) {
         db.exec(readFileSync(schemaFile, 'utf8'));
         writeCatalog(db, catalogFile);
@@ -77,7 +77,9 @@ export function openDatabase(filename) {
       if (version < 2) db.exec(readFileSync(plantingsMigration, 'utf8'));
       if (version < 3) db.exec(readFileSync(new URL('./migrations/003-planting-feed.sql', import.meta.url), 'utf8'));
       if (version < 4) db.exec(readFileSync(new URL('./migrations/004-admin.sql', import.meta.url), 'utf8'));
-      db.exec('ALTER TABLE plants ADD COLUMN price_kopecks INTEGER CHECK (price_kopecks BETWEEN 0 AND 999999999999); PRAGMA user_version = 5');
+      if (version < 5) db.exec('ALTER TABLE plants ADD COLUMN price_kopecks INTEGER CHECK (price_kopecks BETWEEN 0 AND 999999999999)');
+      db.exec(readFileSync(new URL('./migrations/006-shop.sql', import.meta.url), 'utf8'));
+      db.exec('PRAGMA user_version = 6');
     });
     return db;
   } catch (error) {

@@ -16,10 +16,12 @@ import {
   ShoppingBasket,
   Minus,
   X,
+  MessageCircle,
 } from 'lucide-react';
 import { api, Brand, Badge, Empty, stages, num, dateTime } from './shared';
 import { Modal, PanelHead, PlantTable, SearchBox, TaskBoard, TaskDetails, Care, PlantIcon } from './components';
 import { BatchForm, MaterialForm, StockForm } from './forms';
+import { CustomerQuestions } from './admin-chat';
 import { CatalogForm, PriceForm, EmployeeForm, RemoveForm, TaskForm } from './admin-forms';
 
 const pages = [
@@ -29,6 +31,7 @@ const pages = [
   ['employees', 'Сотрудники', Users],
   ['store', 'Склад', Boxes],
   ['catalog', 'Справочник', BookOpen],
+  ['questions', 'Вопросы пользователей', MessageCircle],
 ];
 const routes = {
   inventory: 'plants/inventory',
@@ -565,6 +568,7 @@ function App() {
           {page === 'employees' && <Employees {...{ data, open }} />}
           {page === 'store' && <Store {...{ data, open }} />}
           {page === 'catalog' && <Catalog {...{ data, open }} />}
+          {page === 'questions' && <CustomerQuestions />}
         </main>
       </div>
       {notice && (

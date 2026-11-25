@@ -134,7 +134,7 @@ test('a v1 database upgrades in place with its stock and receipts; planting retr
     const original = recordSale(db, paid);
     db.close();
     db = openDatabase(filename);
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 6);
     let inventory = new Inventory(db);
     assert.equal(inventory.detail(1).quantity, 5);
     assert.equal(inventory.detail(1).planted_at, null);
