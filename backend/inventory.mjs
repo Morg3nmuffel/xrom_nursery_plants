@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
-import { transaction } from './db.mjs';
+import { transaction, writePlants } from './db.mjs';
 import { ApiError, invalid, object, quantity, string, utcDate } from './validation.mjs';
+
+function priceKopecks(value) {
+  if (value === null) return null;
+  const match = typeof value === 'number' && /^(\d{1,10})(?:\.(\d{1,2}))?$/.exec(String(value));
+  if (!match) invalid('Введите неотрицательную цену в рублях с точностью до копеек.');
+  return Number(match[1]) * 100 + Number((match[2] ?? '').padEnd(2, '0'));
+}
 
 function recordEvent(db, before, after, { kind, at, dueAt = null, saleId = null }) {
   db.prepare(`
@@ -36,10 +43,10 @@ export class Inventory {
 
   catalog() {
     const rows = this.db.prepare(`
-      SELECT p.id, p.name, c.* FROM plants p LEFT JOIN plant_care c ON c.plant_id = p.id
-      ORDER BY p.id`).all();
+      SELECT p.id, p.name, p.price_kopecks, c.* FROM plants p LEFT JOIN plant_care c ON c.plant_id = p.id
+      WHERE p.archived_at IS NULL ORDER BY p.id`).all();
     return rows.map(p => ({
-      id: p.id, name: p.name,
+      id: p.id, name: p.name, price_rub: p.price_kopecks === null ? null : p.price_kopecks / 100,
       care: p.plant_id === null ? null : {
         scientific_name: p.scientific_name, category: p.category, light: p.light,
         watering: p.watering, soil: p.soil, pruning: p.pruning, flowering: p.flowering,
@@ -47,6 +54,59 @@ export class Inventory {
         height: { min_cm: p.min_height_cm, max_cm: p.max_height_cm },
       },
     }));
+  }
+
+  addPlant(input) {
+    const id = string(input.id, 'id');
+    const name = string(input.name, 'name');
+    const care = object(input.care, 'care');
+    const card = { id, name };
+    for (const field of ['scientific_name', 'category', 'light', 'watering', 'soil', 'pruning', 'flowering']) {
+      card[field] = string(care[field], field, 4000);
+    }
+    const h = object(care.hardiness, 'hardiness');
+    const height = object(care.height, 'height');
+    if (!Number.isFinite(h.min_temperature_c) || !Number.isFinite(height.min_cm) ||
+        !Number.isFinite(height.max_cm) || height.min_cm < 0 || height.max_cm < height.min_cm) {
+      invalid('Проверьте температуру и диапазон высоты растения.');
+    }
+    card.height = height;
+    card.hardiness = { zone: string(h.zone, 'zone'), min_temperature_c: h.min_temperature_c,
+      notes: h.notes == null || h.notes === '' ? '' : string(h.notes, 'notes', 4000) };
+    return transaction(this.db, () => {
+      const existing = this.db.prepare('SELECT archived_at FROM plants WHERE id = ?').get(id);
+      if (existing?.archived_at === null) throw new ApiError(409, 'plant_exists', 'Этот артикул уже есть в справочнике.');
+      writePlants(this.db, [card]);
+      const kopecks = priceKopecks(input.price_rub === undefined ? null : input.price_rub);
+      this.db.prepare('UPDATE plants SET archived_at = NULL, price_kopecks = ? WHERE id = ?').run(kopecks, id);
+      const { id: plantId, name: plantName, ...metrics } = card;
+      return { id: plantId, name: plantName, price_rub: kopecks === null ? null : kopecks / 100, care: metrics };
+    });
+  }
+
+  setPrice(id, input) {
+    if (Object.keys(input).some(key => key !== 'price_rub')) invalid('Можно изменить только цену.');
+    const kopecks = priceKopecks(input.price_rub);
+    const result = this.db.prepare('UPDATE plants SET price_kopecks = ? WHERE id = ? AND archived_at IS NULL').run(kopecks, id);
+    if (!result.changes) throw new ApiError(404, 'plant_not_found', 'Карточка растения не найдена.');
+    return { id, price_rub: kopecks === null ? null : kopecks / 100 };
+  }
+
+  removePlant(id) {
+    const result = this.db.prepare('UPDATE plants SET archived_at = ? WHERE id = ? AND archived_at IS NULL')
+      .run(new Date().toISOString(), id);
+    if (!result.changes) throw new ApiError(404, 'plant_not_found', 'Растение отсутствует в справочнике.');
+    return { id };
+  }
+
+  removeBatch(id) {
+    return transaction(this.db, () => {
+      this.detail(id);
+      this.db.prepare('UPDATE plant_batches SET archived_at = ?, version = version + 1 WHERE id = ?')
+        .run(new Date().toISOString(), id);
+      this.db.prepare('DELETE FROM growth_plan WHERE batch_id = ?').run(id);
+      return { id };
+    });
   }
 
   list(stage) {
@@ -104,7 +164,7 @@ export class Inventory {
   // Also used inside the single transaction that imports the example from the photo.
   insertBatch(input, plan = this.normalizePlan(input.stage, input.growth_plan)) {
     const plantId = string(input.plant_id, 'plant_id');
-    if (!this.db.prepare('SELECT 1 FROM plants WHERE id = ?').get(plantId)) {
+    if (!this.db.prepare('SELECT 1 FROM plants WHERE id = ? AND archived_at IS NULL').get(plantId)) {
       throw new ApiError(422, 'unknown_plant', 'Растение отсутствует в справочнике.', { plant_id: plantId });
     }
     const at = new Date().toISOString();

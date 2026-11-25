@@ -48,7 +48,7 @@ export function recordSale(db, input) {
       VALUES (?, ?, ?, ?) RETURNING *`).get(registerId, receiptId, contents, at);
     const known = db.prepare('SELECT 1 FROM plants WHERE id = ?');
     const ready = db.prepare(`
-      SELECT * FROM plant_batches WHERE plant_id = ? AND stage = 'ready' AND quantity > 0 ORDER BY id`);
+      SELECT * FROM inventory WHERE plant_id = ? AND stage = 'ready' AND quantity > 0 ORDER BY id`);
     for (const item of items) {
       if (!known.get(item.plant_id)) {
         throw new ApiError(422, 'unknown_plant', 'Неизвестный артикул растения.', { plant_id: item.plant_id });

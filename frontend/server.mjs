@@ -15,12 +15,18 @@ const files = new Map([
 ]);
 const routes = [
   ['plants', 'GET', /^\/(inventory|plants|inventory\/[1-9]\d*(\/history)?)$/],
-  ['plants', 'POST', /^\/plantings$/],
+  ['plants', 'POST', /^\/(plantings|plants)$/],
+  ['plants', 'DELETE', /^\/(plants|inventory\/[1-9]\d*)$/],
   ['plants', 'PATCH', /^\/inventory\/[1-9]\d*$/],
-  ['tasks', 'GET', /^\/tasks$/],
+  ['tasks', 'GET', /^\/(tasks|employees)$/],
+  ['tasks', 'POST', /^\/(tasks|employees)$/],
+  ['tasks', 'DELETE', /^\/(tasks|employees)\/[1-9]\d*$/],
   ['store', 'GET', /^\/(materials|movements|recipes|plantings|sync)$/],
   ['store', 'POST', /^\/(materials|purchases|usage)$/],
+  ['plants', 'PATCH', /^\/plants\/price$/],
+  ['store', 'DELETE', /^\/recipes\/[1-9]\d*$/],
   ['store', 'PUT', /^\/recipes$/],
+  ['store', 'DELETE', /^\/materials$/],
 ];
 const sessionName = 'nursery_admin';
 const sessionMs = 8 * 60 * 60 * 1000;
@@ -144,7 +150,7 @@ export function createWebServer({ urls, secureCookie = false }) {
           ([service, verb, pattern]) => service === parts[1] && verb === method && pattern.test(parts[2]),
         )
       ) {
-        const body = method === 'GET' ? undefined : await readJson(req);
+        const body = method === 'GET' || method === 'DELETE' ? undefined : await readJson(req);
         const result = await upstream(parts[1], parts[2] + search, method, session.tokens[parts[1]], body);
         if (result.status === 401) {
           sessions.delete(sid);

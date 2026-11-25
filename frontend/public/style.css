@@ -1068,3 +1068,17 @@ dialog::backdrop {
     grid-template-columns: 1fr 1fr;
   }
 }
+.remove-action {
+  padding: 12px 24px 20px;
+  border-top: 1px solid #e5e9e4;
+}
+.text-button.danger { color: #963d31; }
+.btn.danger { background: #933d31; color: white; }
+.edit-form textarea {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid #cbd5ca;
+  border-radius: 8px;
+  font: inherit;
+  resize: vertical;
+}

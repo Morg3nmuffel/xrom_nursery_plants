@@ -1,52 +1,28 @@
 import { randomBytes } from 'node:crypto';
-import { adminAccess, bearerToken, jsonServer, missingRoute, readJson, sameSecret, sendJson } from '../http.mjs';
+import { adminAccess, bearerToken, jsonServer, missingRoute, readJson, sendJson } from '../http.mjs';
 import { ApiError, invalid } from '../validation.mjs';
 import { TaskPlanner } from './planner.mjs';
+import { Employees } from './employees.mjs';
 
 const sessionLifetimeMs = 8 * 60 * 60 * 1000;
-
-function verifyEmployees(employees) {
-  if (!Array.isArray(employees) || employees.length !== 5) {
-    throw new Error('В списке сотрудников должно быть ровно пять записей.');
-  }
-  const ids = new Set();
-  const usernames = new Set();
-  for (const employee of employees) {
-    const { id, name, username, password } = employee ?? {};
-    if (!Number.isInteger(id) || id < 1 || id > 5 || ids.has(id) || usernames.has(username) ||
-        typeof name !== 'string' || !name.trim() || name.length > 120 ||
-        typeof username !== 'string' || !username.trim() || username !== username.trim() || username.length > 120 ||
-        typeof password !== 'string' || !password.trim() || password.length > 1024) {
-      throw new Error('Для каждого сотрудника укажите уникальные id от 1 до 5 и username, а также name и password.');
-    }
-    ids.add(id);
-    usernames.add(username);
-  }
-}
 
 export function createTasksService(db, {
   employees, adminUser, adminPassword, timeZone = 'Europe/Moscow', intervalMs = 30_000, clock,
 }) {
-  verifyEmployees(employees);
   if (!Number.isInteger(intervalMs) || intervalMs < 1 || intervalMs > 2147483647) {
     throw new Error('TASKS_INTERVAL_MS должен быть положительным целым числом до 2147483647.');
   }
-  const employeeByLogin = new Map(employees.map(employee => [employee.username, employee]));
-  const employeeNames = new Map(employees.map(({ id, name }) => [id, name.trim()]));
-  const assigneeIds = [...employeeNames.keys()].sort((a, b) => a - b);
-  const planner = new TaskPlanner(db, { assigneeIds, timeZone, clock });
+  const planner = new TaskPlanner(db, { timeZone, clock });
+  const roster = new Employees(db, employees);
   const sessions = new Map();
   const admin = adminPassword ? adminAccess({ adminUser, adminPassword }) : null;
 
   function getSession(token) {
     const session = sessions.get(token);
-    if (session && session.expires > Date.now()) return session;
+    if (session && session.expires > Date.now() &&
+        db.prepare('SELECT 1 FROM employees WHERE id = ? AND removed_at IS NULL').get(session.id)) return session;
     sessions.delete(token);
     throw new ApiError(401, 'unauthorized', 'Требуется авторизация сотрудника.');
-  }
-
-  function withAssigneeName(task) {
-    return { ...task, assignee_name: employeeNames.get(task.assignee_id) };
   }
 
   async function route(req, res) {
@@ -61,8 +37,16 @@ export function createTasksService(db, {
       if (pathname === '/api/admin/logout' && method === 'POST') return sendJson(res, 200, admin.logout(token));
       if (pathname === '/api/admin/tasks' && method === 'GET') {
         const { date, items } = planner.list();
-        return sendJson(res, 200, { date, time_zone: timeZone, items: items.map(withAssigneeName),
-          employees: [...employeeNames].map(([id, name]) => ({ id, name })) });
+        return sendJson(res, 200, { date, time_zone: timeZone, items, employees: roster.list() });
+      }
+      if (pathname === '/api/admin/employees' && method === 'GET') return sendJson(res, 200, { items: roster.list() });
+      if (pathname === '/api/admin/employees' && method === 'POST') return sendJson(res, 201, roster.add(await readJson(req)));
+      if (pathname === '/api/admin/tasks' && method === 'POST') return sendJson(res, 201, planner.add(await readJson(req)));
+      const target = /^\/api\/admin\/(employees|tasks)\/([1-9]\d*)$/.exec(pathname);
+      if (target && method === 'DELETE') {
+        const id = Number(target[2]);
+        if (!Number.isSafeInteger(id)) invalid('Некорректный идентификатор.');
+        return sendJson(res, 200, target[1] === 'employees' ? roster.remove(id) : planner.remove(id));
       }
       missingRoute();
     }
@@ -72,8 +56,8 @@ export function createTasksService(db, {
     }
     if (pathname === '/api/tasks/login' && method === 'POST') {
       const { username, password } = await readJson(req);
-      const employee = employeeByLogin.get(username);
-      if (!employee || !sameSecret(password, employee.password)) {
+      const employeeId = roster.authenticate(username, password);
+      if (employeeId === null) {
         throw new ApiError(401, 'invalid_credentials', 'Неверный логин или пароль.');
       }
       const now = Date.now();
@@ -81,7 +65,7 @@ export function createTasksService(db, {
         if (session.expires <= now) sessions.delete(token);
       }
       const token = randomBytes(32).toString('hex');
-      sessions.set(token, { id: employee.id, expires: now + sessionLifetimeMs });
+      sessions.set(token, { id: employeeId, expires: now + sessionLifetimeMs });
       return sendJson(res, 200, { access_token: token, token_type: 'Bearer', expires_in: sessionLifetimeMs / 1000 });
     }
 
@@ -97,7 +81,7 @@ export function createTasksService(db, {
       if (scope !== 'mine' && scope !== 'team') invalid('Допустимые значения scope: mine и team.');
       const { date, items } = planner.list(scope === 'mine' ? id : null);
       return sendJson(res, 200, {
-        date, time_zone: timeZone, employee: { id, name: employeeNames.get(id) }, items: items.map(withAssigneeName),
+        date, time_zone: timeZone, employee: { id, name: db.prepare('SELECT name FROM employees WHERE id = ?').get(id).name }, items,
       });
     }
     const task = /^\/api\/tasks\/([1-9]\d*)\/(start|complete)$/.exec(pathname);
@@ -105,7 +89,7 @@ export function createTasksService(db, {
       const { id } = getSession(token);
       const taskId = Number(task[1]);
       if (!Number.isSafeInteger(taskId)) invalid('Некорректный идентификатор задачи.');
-      return sendJson(res, 200, withAssigneeName(planner.changeStatus(taskId, id, task[2])));
+      return sendJson(res, 200, planner.changeStatus(taskId, id, task[2]));
     }
     missingRoute();
   }

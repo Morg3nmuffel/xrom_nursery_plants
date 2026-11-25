@@ -4,8 +4,7 @@ import { createTasksService } from './api.mjs';
 
 async function main() {
   const employeesFile = process.argv[2] || process.env.TASKS_EMPLOYEES_FILE;
-  if (!employeesFile) throw new Error('Передайте путь к JSON сотрудников первым аргументом или в TASKS_EMPLOYEES_FILE.');
-  const employees = JSON.parse(readFileSync(employeesFile, 'utf8').replace(/^\uFEFF/, ''));
+  const employees = () => employeesFile ? JSON.parse(readFileSync(employeesFile, 'utf8').replace(/^\uFEFF/, '')) : [];
   const host = process.env.TASKS_HOST || '127.0.0.1';
   const port = Number(process.env.TASKS_PORT || 8788);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Недопустимый TASKS_PORT.');

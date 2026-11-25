@@ -110,7 +110,7 @@ test('planting a new variety creates its catalog row, validates input and follow
   const result = await post(newPlant);
   assert.equal(result.status, 201);
   const catalogItem = inventory.catalog().find(p => p.id === newPlant.plant_id);
-  assert.deepEqual(catalogItem, { id: newPlant.plant_id, name: newPlant.plant_name, care: null });
+  assert.deepEqual(catalogItem, { id: newPlant.plant_id, name: newPlant.plant_name, price_rub: null, care: null });
   assert.equal(result.data.planted_at, '2020-03-01T08:00:00.000Z');
   const batch = inventory.detail(result.data.batch_id);
   assert.equal(batch.stage, 'rooting');
@@ -134,7 +134,7 @@ test('a v1 database upgrades in place with its stock and receipts; planting retr
     const original = recordSale(db, paid);
     db.close();
     db = openDatabase(filename);
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 3);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 5);
     let inventory = new Inventory(db);
     assert.equal(inventory.detail(1).quantity, 5);
     assert.equal(inventory.detail(1).planted_at, null);

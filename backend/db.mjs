@@ -21,6 +21,10 @@ function writeCatalog(db, file) {
       !Array.isArray(catalog.plants) || catalog.plants.length === 0) {
     throw new Error('Ожидался справочник nursery_plants версии 1.0 с массивом plants.');
   }
+  return writePlants(db, catalog.plants);
+}
+
+export function writePlants(db, plants) {
   const plant = db.prepare(`
     INSERT INTO plants(id, name) VALUES (?, ?)
     ON CONFLICT(id) DO UPDATE SET name = excluded.name`);
@@ -36,7 +40,7 @@ function writeCatalog(db, file) {
       flowering = excluded.flowering, min_height_cm = excluded.min_height_cm,
       max_height_cm = excluded.max_height_cm`);
   const seen = new Set();
-  for (const p of catalog.plants) {
+  for (const p of plants) {
     if (typeof p.id !== 'string' || !p.id || p.id !== p.id.trim() || p.id.length > 160 || seen.has(p.id)) {
       throw new Error('Нужен уникальный id растения длиной 1–160 символов без крайних пробелов.');
     }
@@ -64,15 +68,16 @@ export function openDatabase(filename) {
         throw new Error('INVENTORY_DB должен указывать на базу растений.');
       }
       const { user_version: version } = db.prepare('PRAGMA user_version').get();
-      if (version === 3) return;
-      if (version < 0 || version > 3) throw new Error('Неизвестная версия схемы базы учёта.');
+      if (version === 5) return;
+      if (version < 0 || version > 5) throw new Error('Неизвестная версия схемы базы учёта.');
       if (version === 0) {
         db.exec(readFileSync(schemaFile, 'utf8'));
         writeCatalog(db, catalogFile);
       }
       if (version < 2) db.exec(readFileSync(plantingsMigration, 'utf8'));
-      db.exec(readFileSync(new URL('./migrations/003-planting-feed.sql', import.meta.url), 'utf8'));
-      db.exec('PRAGMA user_version = 3');
+      if (version < 3) db.exec(readFileSync(new URL('./migrations/003-planting-feed.sql', import.meta.url), 'utf8'));
+      if (version < 4) db.exec(readFileSync(new URL('./migrations/004-admin.sql', import.meta.url), 'utf8'));
+      db.exec('ALTER TABLE plants ADD COLUMN price_kopecks INTEGER CHECK (price_kopecks BETWEEN 0 AND 999999999999); PRAGMA user_version = 5');
     });
     return db;
   } catch (error) {

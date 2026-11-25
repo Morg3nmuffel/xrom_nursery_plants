@@ -46,6 +46,13 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
     if (pathname === '/api/admin/plants' && method === 'GET') {
       return send(res, 200, { items: inventory.catalog() });
     }
+    if (pathname === '/api/admin/plants' && method === 'POST') return send(res, 201, inventory.addPlant(await readJson(req)));
+    if (pathname === '/api/admin/plants/price' && method === 'PATCH') {
+      return send(res, 200, inventory.setPrice(searchParams.get('id'), await readJson(req)));
+    }
+    if (pathname === '/api/admin/plants' && method === 'DELETE') {
+      return send(res, 200, inventory.removePlant(searchParams.get('id')));
+    }
     if (pathname === '/api/admin/plantings' && method === 'POST') {
       const planting = inventory.plant(await readJson(req));
       return send(res, planting.replayed ? 200 : 201, planting);
@@ -61,6 +68,7 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
       if (batch[2] && method === 'GET') return send(res, 200, { items: inventory.history(id) });
       if (!batch[2] && method === 'GET') return send(res, 200, inventory.detail(id));
       if (!batch[2] && method === 'PATCH') return send(res, 200, inventory.update(id, await readJson(req)));
+      if (!batch[2] && method === 'DELETE') return send(res, 200, inventory.removeBatch(id));
     }
     missingRoute();
   }

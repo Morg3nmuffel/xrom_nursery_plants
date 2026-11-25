@@ -19,6 +19,29 @@ const hydrangea = 'hydrangea-paniculata-limelight';
 const lavender = 'lavandula-angustifolia';
 const beforeMidnight = '2026-11-24T20:59:00.000Z';
 
+test('upgrading the five-assignee table retains finished tasks and accepts additional staff IDs', t => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const inventory = new Inventory(db);
+  const batch = inventory.create({ plant_id: lavender, location: 'Ряд 1', stage: 'rooting', quantity: 4 });
+  db.exec(`CREATE TABLE task_assignments (
+    id INTEGER PRIMARY KEY, batch_id INTEGER NOT NULL REFERENCES plant_batches(id),
+    assignee_id INTEGER NOT NULL CHECK (assignee_id BETWEEN 1 AND 5), due_on TEXT NOT NULL,
+    created_at TEXT NOT NULL, started_at TEXT, completed_at TEXT, completed_on TEXT,
+    completed_details_json TEXT, UNIQUE(batch_id, due_on)) STRICT;
+    CREATE UNIQUE INDEX task_one_open_per_batch ON task_assignments(batch_id) WHERE completed_at IS NULL;
+    CREATE INDEX task_completions_by_day ON task_assignments(completed_on, batch_id)`);
+  const snapshot = { title: 'Проверить посевы', instructions: 'Сделано', care: {}, location: 'Ряд 1' };
+  db.prepare(`INSERT INTO task_assignments VALUES (7, ?, 1, '2026-11-24', ?, NULL, ?, '2026-11-24', ?)`)
+    .run(batch.id, beforeMidnight, beforeMidnight, JSON.stringify(snapshot));
+  const planner = new TaskPlanner(db, { assigneeIds: [6], timeZone: 'Europe/Moscow', clock: () => new Date(beforeMidnight) });
+  assert.equal(planner.list().items[0].instructions, 'Сделано');
+  inventory.create({ plant_id: lavender, location: 'Ряд 2', stage: 'rooting', quantity: 4 });
+  assert.equal(planner.generate(), 1);
+  assert.equal(planner.list(6).items.length, 1);
+  assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
+});
+
 test('the demo assigns each of five employees one task using stage and imported care', t => {
   const db = openDatabase(':memory:');
   t.after(() => db.close());

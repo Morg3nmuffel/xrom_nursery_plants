@@ -115,11 +115,11 @@ export function TaskCard({ task, onClick }) {
   return (
     <button className="task-card" onClick={() => onClick(task)}>
       <strong>{task.title}</strong>
-      <span>{task.plant_name}</span>
-      <small>
+      {task.plant_name && <span>{task.plant_name}</span>}
+      {task.location && <small>
         <MapPin size={13} />
         {task.location}
-      </small>
+      </small>}
       <div className="task-foot">
         <span className="person">
           <i>{task.assignee_name[0]}</i>

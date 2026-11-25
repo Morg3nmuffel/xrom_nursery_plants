@@ -34,14 +34,21 @@ export class Stock {
     });
   }
 
-  normalizeItems(items) {
+  removeMaterial(id) {
+    const result = this.db.prepare('UPDATE materials SET archived_at = ? WHERE id = ? AND archived_at IS NULL')
+      .run(new Date().toISOString(), id);
+    if (!result.changes) throw new ApiError(404, 'unknown_material', 'Расходник отсутствует на складе.');
+    return { id };
+  }
+
+  normalizeItems(items, includeArchived = false) {
     if (!Array.isArray(items) || !items.length) invalid('Нужен непустой массив items.');
     const amounts = new Map();
-    const lookup = this.db.prepare('SELECT decimals FROM materials WHERE id = ?');
+    const lookup = this.db.prepare('SELECT decimals FROM materials WHERE id = ? AND (archived_at IS NULL OR ?)');
     for (const item of items) {
       object(item, 'items[]');
       const id = string(item.material_id, 'material_id');
-      const material = lookup.get(id);
+      const material = lookup.get(id, Number(includeArchived));
       if (!material) throw new ApiError(422, 'unknown_material', 'Неизвестный расходник.', { material_id: id });
       if (amounts.has(id)) invalid('Объедините строки одного расходника в одну позицию.');
       amounts.set(id, milliUnits(item.quantity, material.decimals, id));
@@ -57,7 +64,7 @@ export class Stock {
   post(kind, input) {
     if (!['purchase', 'usage'].includes(kind)) invalid('Неизвестная складская операция.');
     const reference = string(input.operation_id, 'operation_id');
-    return transaction(this.db, () => this.move(kind, reference, this.normalizeItems(input.items)));
+    return transaction(this.db, () => this.move(kind, reference, this.normalizeItems(input.items, true)));
   }
 
   // Called with the write lock held. Check all balances before recording any lines.
@@ -69,9 +76,10 @@ export class Stock {
       if (previous.request_json !== signature) throw new ApiError(409, 'operation_conflict', 'У этого номера операции другой состав.');
       return { operation_no: previous.id, replayed: true, movements: movements.all(previous.id) };
     }
-    const lookup = this.db.prepare('SELECT stock_milli, unit FROM materials WHERE id = ?');
+    const lookup = this.db.prepare('SELECT stock_milli, unit FROM materials WHERE id = ? AND archived_at IS NULL');
     const changes = lines.map(({ material_id, milli }) => {
       const material = lookup.get(material_id);
+      if (!material) throw new ApiError(422, 'unknown_material', 'Расходник удалён со склада.', { material_id });
       const delta = kind === 'purchase' ? milli : -milli;
       const after = material.stock_milli + delta;
       if (after < 0) {
@@ -98,12 +106,21 @@ export class Stock {
   }
 
   recipes() {
-    return this.db.prepare(`SELECT id, plant_id FROM recipes WHERE id IN
-      (SELECT MAX(id) FROM recipes GROUP BY plant_id) ORDER BY plant_id`).all().map(row => ({
+    return this.db.prepare('SELECT id, plant_id FROM current_recipes ORDER BY plant_id').all().map(row => ({
       id: row.id, plant_id: row.plant_id || null, items: this.recipeItems(row.id).map(line => ({
         material_id: line.material_id, quantity: line.milli / 1000,
       })),
     }));
+  }
+
+  removeRecipe(id) {
+    return transaction(this.db, () => {
+      const row = this.db.prepare('SELECT plant_id FROM current_recipes WHERE id = ?').get(id);
+      if (!row) throw new ApiError(404, 'recipe_not_found', 'Норма уже удалена или заменена.');
+      this.db.prepare('UPDATE recipes SET retired_at = ? WHERE plant_id = ? AND retired_at IS NULL')
+        .run(new Date().toISOString(), row.plant_id);
+      return { id };
+    });
   }
 
   setRecipe(input) {
@@ -112,7 +129,7 @@ export class Stock {
   }
 
   writeRecipe(scope, lines) {
-    const current = this.db.prepare('SELECT id FROM recipes WHERE plant_id = ? ORDER BY id DESC LIMIT 1').get(scope);
+    const current = this.db.prepare('SELECT id FROM recipes WHERE plant_id = ? AND retired_at IS NULL ORDER BY id DESC LIMIT 1').get(scope);
     if (current) {
       const prior = new Map(this.recipeItems(current.id).map(line => [line.material_id, line.milli]));
       if (prior.size === lines.length && lines.every(line => prior.get(line.material_id) === line.milli)) return current;

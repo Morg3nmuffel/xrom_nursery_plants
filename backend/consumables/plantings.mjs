@@ -47,19 +47,23 @@ export class PlantingQueue {
 
   selectRecipe(job) {
     if (job.recipe_id !== null) return job.recipe_id;
-    const atRegistration = this.db.prepare(`SELECT id FROM recipes WHERE plant_id IN ('', ?) AND created_at <= ?
-      ORDER BY (plant_id = ?) DESC, created_at DESC, id DESC LIMIT 1`).get(job.plant_id, job.recorded_at, job.plant_id);
+    const atRegistration = this.db.prepare(`SELECT id FROM recipes WHERE plant_id IN ('', ?) AND created_at <= ? AND (retired_at IS NULL OR retired_at > ?)
+      ORDER BY (plant_id = ?) DESC, created_at DESC, id DESC LIMIT 1`).get(job.plant_id, job.recorded_at, job.recorded_at, job.plant_id);
     if (atRegistration) return atRegistration.id;
     // A planting received before initial configuration can use the first applicable recipe.
     return this.db.prepare(`SELECT id FROM recipes WHERE plant_id IN ('', ?)
-      ORDER BY created_at, id LIMIT 1`).get(job.plant_id)?.id ?? null;
+      AND created_at > ? AND (retired_at IS NULL OR retired_at > ?) ORDER BY created_at, id LIMIT 1`).get(job.plant_id, job.recorded_at, job.recorded_at)?.id ?? null;
   }
 
   settle(seq) {
     return transaction(this.db, () => {
       const job = this.db.prepare("SELECT * FROM planting_jobs WHERE seq = ? AND status = 'pending'").get(seq);
       if (!job) return;
-      const recipe = this.selectRecipe(job);
+      let recipe = this.selectRecipe(job);
+      if (recipe !== null && !this.db.prepare('SELECT 1 FROM valid_recipes WHERE id = ?').get(recipe)) {
+        recipe = this.db.prepare(`SELECT id FROM current_recipes WHERE plant_id IN ('', ?)
+          ORDER BY (plant_id = ?) DESC LIMIT 1`).get(job.plant_id, job.plant_id)?.id ?? null;
+      }
       const waitFor = problem => {
         const json = JSON.stringify(problem);
         if (recipe !== job.recipe_id || json !== job.problem) {

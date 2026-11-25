@@ -14,12 +14,19 @@ export function openMaterials(filename) {
     transaction(db, () => {
       const { application_id: id } = db.prepare('PRAGMA application_id').get();
       const { user_version: version } = db.prepare('PRAGMA user_version').get();
-      if (id === applicationId && version === 1) return;
-      if (id || version || db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table'").get()) {
-        throw new Error('MATERIALS_DB должен указывать на отдельную базу расходников.');
+      if (id === applicationId && version === 3) return;
+      if (id !== applicationId || ![1, 2].includes(version)) {
+        if (id || version || db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table'").get()) {
+          throw new Error('MATERIALS_DB должен указывать на отдельную базу расходников.');
+        }
+        db.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
       }
-      db.exec(readFileSync(new URL('./schema.sql', import.meta.url), 'utf8'));
-      db.exec(`PRAGMA application_id = ${applicationId}; PRAGMA user_version = 1`);
+      if (version < 2) db.exec(readFileSync(new URL('./002-archive.sql', import.meta.url), 'utf8'));
+      db.exec(`ALTER TABLE recipes ADD COLUMN retired_at TEXT;
+        DROP VIEW current_recipes;
+        CREATE VIEW current_recipes AS SELECT * FROM valid_recipes WHERE retired_at IS NULL
+          AND id IN (SELECT MAX(id) FROM recipes GROUP BY plant_id);
+        PRAGMA application_id = ${applicationId}; PRAGMA user_version = 3`);
     });
     enableWal(db);
     return db;

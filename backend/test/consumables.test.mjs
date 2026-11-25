@@ -112,7 +112,12 @@ test('the v2 upgrade preserves completed tasks and publishes only new plantings 
     db.exec(readFileSync(new URL('../migrations/002-plantings.sql', import.meta.url), 'utf8'));
     db.exec('PRAGMA user_version = 2');
     importCatalog(db);
-    new Inventory(db).plant(sample);
+    const original = { plant_id: sample.plant_id, location: sample.location, stage: 'sowing', quantity: sample.quantity,
+      plant_name: null, planted_at: null, growth_plan: [] };
+    const timestamp = '2026-11-25T08:00:00.000Z';
+    db.prepare(`INSERT INTO plant_batches(plant_id,location,stage,quantity,updated_at)
+      VALUES (?,?,'sowing',?,?)`).run(sample.plant_id, sample.location, sample.quantity, timestamp);
+    db.prepare('INSERT INTO plantings VALUES (?,1,?,?)').run(sample.planting_id, timestamp, JSON.stringify(original));
     const options = { assigneeIds: [1, 2, 3, 4, 5], timeZone: 'Europe/Moscow', clock: () => new Date('2026-11-25T08:00:00Z') };
     const oldPlanner = new TaskPlanner(db, options);
     oldPlanner.generate();
@@ -254,4 +259,27 @@ test('two HTTP services catch up after warehouse downtime, debit once and expose
     stockDb.close();
     plantDb.close();
   }
+});
+test('deleting a scoped recipe preserves past consumption and selects a live rule for new plantings', t => {
+  const db = openMaterials(':memory:');
+  t.after(() => db.close());
+  const stock = new Stock(db);
+  stock.seedDemo();
+  const queue = new PlantingQueue(stock);
+  stock.setRecipe({ plant_id: 'A', items: items(2, 1) });
+  const specific = stock.setRecipe({ plant_id: 'A', items: items(3, 2) });
+  queue.accept([event(1, 'A', 1)]);
+  queue.settlePending();
+  assert.deepEqual(balance(stock), [97, 48]);
+  stock.removeRecipe(specific.id);
+  queue.accept([event(2, 'A', 1)]);
+  queue.settlePending();
+  assert.deepEqual(balance(stock), [96, 47.5]);
+  stock.removeRecipe(stock.recipes()[0].id);
+  queue.accept([event(3, 'A', 1)]);
+  queue.settlePending();
+  assert.equal(queue.jobs('pending')[0].problem.code, 'missing_recipe');
+  stock.setRecipe({ items: items(1, 0.5) });
+  queue.settlePending();
+  assert.deepEqual(balance(stock), [95, 47]);
 });

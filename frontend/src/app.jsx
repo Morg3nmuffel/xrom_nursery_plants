@@ -12,6 +12,7 @@ import {
   CalendarDays,
   RefreshCw,
   Plus,
+  Users,
   ShoppingBasket,
   Minus,
   X,
@@ -19,11 +20,13 @@ import {
 import { api, Brand, Badge, Empty, stages, statuses, careLabels, num, dateTime } from './shared';
 import { Modal, PanelHead, PlantTable, SearchBox, TaskCard, PlantIcon } from './components';
 import { BatchForm, MaterialForm, StockForm } from './forms';
+import { CatalogForm, PriceForm, EmployeeForm, RemoveForm, TaskForm } from './admin-forms';
 
 const pages = [
   ['overview', 'Обзор', LayoutDashboard],
   ['plants', 'Растения', Sprout],
   ['tasks', 'Задачи', ClipboardList],
+  ['employees', 'Сотрудники', Users],
   ['store', 'Склад', Boxes],
   ['catalog', 'Справочник', BookOpen],
 ];
@@ -31,12 +34,15 @@ const routes = {
   inventory: 'plants/inventory',
   catalog: 'plants/plants',
   tasks: 'tasks/tasks',
+  employees: 'tasks/employees',
   materials: 'store/materials',
   movements: 'store/movements',
   recipes: 'store/recipes',
   jobs: 'store/plantings',
   sync: 'store/sync',
 };
+const rubles = new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'RUB' });
+const displayPrice = value => value == null ? 'Цена не указана' : rubles.format(value);
 const opLabels = { purchase: 'Приход', usage: 'Расход', planting: 'Посадка' };
 const fmtDate = new Intl.DateTimeFormat('ru-RU', {
   weekday: 'long',
@@ -152,7 +158,7 @@ function Overview({ data, nav, open }) {
                   <span>
                     <strong>{t.title}</strong>
                     <small>
-                      {t.assignee_name} · {t.location}
+                      {t.assignee_name}{t.location && ' · ' + t.location}
                     </small>
                   </span>
                 </button>
@@ -215,6 +221,8 @@ function Tasks({ data, open }) {
   return (
     <>
       <Heading title="Задачи команды" sub={fmtDate.format(localDay(data.tasks?.date))}>
+        <div className="button-row">
+        <button className="btn primary" onClick={() => open('newTask')}><Plus size={16} />Новая задача</button>
         <select value={worker} aria-label="Исполнитель" onChange={(e) => setWorker(e.target.value)}>
           <option value="">Все сотрудники</option>
           {data.tasks?.employees?.map((p) => (
@@ -223,6 +231,7 @@ function Tasks({ data, open }) {
             </option>
           ))}
         </select>
+        </div>
       </Heading>
       <div className="kanban">
         {Object.entries(statuses).map(([code, label]) => (
@@ -270,6 +279,18 @@ function SimpleTable({ headers, rows }) {
     <Empty>Записей пока нет.</Empty>
   );
 }
+function Employees({ data, open }) {
+  const rows = (data.employees?.items || []).map(person => [person.id, person.name, person.username,
+    <button className="text-button danger" onClick={() => open('remove', {
+      name: person.name, path: 'tasks/employees/' + person.id,
+      effect: 'Доступ сотрудника будет закрыт. Планировщик распределит открытые задачи между доступными сотрудниками.',
+    })}>Удалить</button>]);
+  return <>
+    <Heading title="Сотрудники"><button className="btn primary" onClick={() => open('employee')}>
+      <Plus size={16} />Добавить сотрудника</button></Heading>
+    <section className="panel"><SimpleTable headers={['Имя', 'Логин', 'Действие']} rows={rows} /></section>
+  </>;
+}
 function Store({ data, open }) {
   const [tab, setTab] = useState('materials');
   const materials = data.materials?.items || [],
@@ -283,7 +304,11 @@ function Store({ data, open }) {
     jobs: 'Списания по посадкам',
   };
   const rows = {
-    materials: materials.map((m) => [m.id, <strong>{m.name}</strong>, m.id, num(m.quantity), m.unit]),
+    materials: materials.map((m) => [m.id, <strong>{m.name}</strong>, m.id, num(m.quantity), m.unit,
+      <button className="text-button danger" onClick={() => open('remove', { name: m.name,
+        path: 'store/materials?id=' + encodeURIComponent(m.id),
+        effect: 'Материал исчезнет из остатков и новых операций. Нормы с этим материалом потребуется заменить.',
+      })}>Удалить</button>]),
     movements: (data.movements?.items || []).map((r) => [
       r.operation_no + '-' + r.material_id,
       dateTime(r.recorded_at),
@@ -306,6 +331,10 @@ function Store({ data, open }) {
             (mat(i.material_id)?.name || i.material_id),
         )
         .join(', '),
+      <button className="text-button danger" onClick={() => open('remove', { path: 'store/recipes/' + r.id,
+        name: r.plant_id ? plant(r.plant_id) : 'Общая норма',
+        effect: 'Для новых посадок будет выбрана другая подходящая норма. Если её нет, списание будет ожидать настройки.',
+      })}>Удалить норму</button>,
     ]),
     jobs: (data.jobs?.items || []).map((j) => [
       j.seq,
@@ -323,9 +352,9 @@ function Store({ data, open }) {
     ]),
   };
   const head = {
-    materials: ['Материал', 'Артикул', 'Остаток', 'Ед.'],
+    materials: ['Материал', 'Артикул', 'Остаток', 'Ед.', 'Действие'],
     movements: ['Время', 'Операция', 'Материал', 'Изменение', 'После операции', 'Документ'],
-    recipes: ['Растение', 'Расход на экземпляр'],
+    recipes: ['Растение', 'Расход на экземпляр', 'Действие'],
     jobs: ['Посадка', 'Растение', 'Количество', 'Состояние', 'Причина ожидания'],
   };
   return (
@@ -374,13 +403,17 @@ function Catalog({ data, open }) {
   return (
     <>
       <Heading title="Справочник растений">
+        <div className="button-row">
         <SearchBox value={q} onChange={search} placeholder="Найти растение" />
+        <button className="btn primary" onClick={() => open('newCard')}><Plus size={16} />Добавить растение</button>
+        </div>
       </Heading>
       <div className="catalog">
         {plants.map((p) => (
           <button key={p.id} className="catalog-card" onClick={() => open('care', p)}>
             <PlantIcon id={p.id} />
             <strong>{p.name}</strong>
+            <small>{displayPrice(p.price_rub)}</small>
             <small>{p.care?.scientific_name || 'Карточка ухода не заполнена'}</small>
             {p.care && <span>{p.care.category}</span>}
           </button>
@@ -396,14 +429,13 @@ function Details({ type, item }) {
       <div className="details">
         <Badge value={item.status} labels={statuses} />
         <h3>{item.title}</h3>
-        <p>
+        {item.batch_id != null && <p>
           {item.plant_name} · {item.quantity} шт.
-        </p>
+        </p>}
         <dl>
           <dt>Исполнитель</dt>
           <dd>{item.assignee_name}</dd>
-          <dt>Место</dt>
-          <dd>{item.location}</dd>
+          {item.location && <><dt>Место</dt><dd>{item.location}</dd></>}
           <dt>Срок</dt>
           <dd>{item.due_on.split('-').reverse().join('.')}</dd>
           {item.completed_at && (
@@ -423,6 +455,7 @@ function Details({ type, item }) {
       <PlantIcon id={item.id} />
       <h3>{item.name}</h3>
       <p>{item.care?.scientific_name}</p>
+      <p>{displayPrice(item.price_rub)}</p>
       {item.care ? (
         <>
           <Care care={item.care} />
@@ -453,10 +486,15 @@ function Care({ care }) {
     ));
 }
 const formTitles = {
+  employee: 'Новый сотрудник',
+  newTask: 'Новая задача',
+  newCard: 'Новая карточка растения',
+  remove: 'Подтвердите удаление',
   plant: 'Новая посадка',
   batch: 'Партия растений',
   task: 'Задача сотрудника',
   care: 'Карточка растения',
+  price: 'Цена растения',
   material: 'Новый материал',
   usage: 'Списание материалов',
   purchases: 'Приход материалов',
@@ -575,6 +613,7 @@ function App() {
           {page === 'overview' && <Overview {...{ data, nav, open }} />}
           {page === 'plants' && <Plants {...{ data, open, stage, setStage }} />}
           {page === 'tasks' && <Tasks {...{ data, open }} />}
+          {page === 'employees' && <Employees {...{ data, open }} />}
           {page === 'store' && <Store {...{ data, open }} />}
           {page === 'catalog' && <Catalog {...{ data, open }} />}
         </main>
@@ -588,8 +627,14 @@ function App() {
         </div>
       )}
       {dialog && (
-        <Modal title={formTitles[type]} close={() => setDialog(null)}>
-          {['plant', 'batch'].includes(type) ? (
+        <Modal key={type} title={formTitles[type]} close={() => setDialog(null)}>
+          {type === 'remove' ? <RemoveForm target={item} saved={saved} cancel={() => setDialog(null)} />
+          : type === 'employee' ? <EmployeeForm saved={saved} />
+          : type === 'price' ? <PriceForm plant={item} saved={saved} />
+          : type === 'newCard' ? <CatalogForm saved={saved} />
+          : type === 'newTask' ? <TaskForm saved={saved} day={data.tasks?.date}
+              employees={data.employees?.items || []} batches={data.inventory?.items || []} />
+          : ['plant', 'batch'].includes(type) ? (
             <BatchForm batch={item} plants={data.catalog?.items || []} saved={saved} />
           ) : type === 'material' ? (
             <MaterialForm saved={saved} />
@@ -604,6 +649,17 @@ function App() {
           ) : (
             <Details type={type} item={item} />
           )}
+          {type === 'care' && <div className="remove-action"><button className="btn" onClick={() => open('price', item)}>Изменить цену</button></div>}
+          {['batch', 'care', 'task'].includes(type) && <div className="remove-action">
+            <button className="text-button danger" onClick={() => {
+              if (type === 'batch') open('remove', { path: 'plants/inventory/' + item.id, name: item.name + ' · партия №' + item.id,
+                effect: 'Партия будет снята с учёта и продажи. Запланированные переходы роста будут отменены. Проведённые списания материалов сохранятся.' });
+              if (type === 'care') open('remove', { path: 'plants/plants?id=' + encodeURIComponent(item.id), name: item.name,
+                effect: 'Карточка исчезнет из справочника и выбора для новых посадок. Ранее зарегистрированные партии сохранятся.' });
+              if (type === 'task') open('remove', { path: 'tasks/tasks/' + item.id, name: item.title,
+                effect: 'Задача исчезнет с доски команды и из списка исполнителя.' });
+            }}>{type === 'batch' ? 'Удалить посадку' : type === 'care' ? 'Удалить из справочника' : 'Удалить задачу'}</button>
+          </div>}
         </Modal>
       )}
     </div>

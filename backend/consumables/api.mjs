@@ -25,12 +25,15 @@ export function createMaterialsService(db, { adminUser, adminPassword, syncToken
     if (pathname === '/api/admin/materials') {
       if (method === 'GET') return send(res, 200, { items: stock.materials() });
       if (method === 'POST') return send(res, 201, stock.addMaterial(await readJson(req)));
+      if (method === 'DELETE') return send(res, 200, stock.removeMaterial(searchParams.get('id')));
     }
     if (method === 'POST' && ['/api/admin/purchases', '/api/admin/usage'].includes(pathname)) {
       const kind = pathname === '/api/admin/purchases' ? 'purchase' : 'usage';
       const result = stock.post(kind, await readJson(req));
       return send(res, result.replayed ? 200 : 201, result);
     }
+    const recipe = /^\/api\/admin\/recipes\/([1-9]\d*)$/.exec(pathname);
+    if (method === 'DELETE' && recipe) return send(res, 200, stock.removeRecipe(Number(recipe[1])));
     if (pathname === '/api/admin/recipes') {
       if (method === 'GET') return send(res, 200, { items: stock.recipes() });
       if (method === 'PUT') return send(res, 200, stock.setRecipe(await readJson(req)));
