@@ -99,7 +99,10 @@ test('registered buyers see ready stock and keep cart and full human handoff thr
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(decision) } }] }));
   });
-  const ai = createAiPlanner({ url: (await listen(provider)) + '/v1/chat/completions', model: 'deepseek-flash' });
+  const ai = createAiPlanner({
+    url: (await listen(provider)) + '/v1/chat/completions',
+    model: 'deepseek-flash',
+  });
   let app = await boot(directory.path, ai);
   const credentials = { username: 'buyer.one', password: 'test-customer-password' };
   const message = (client, text, id) =>
@@ -255,6 +258,63 @@ test('without a model the consultant can ask for conditions and rejects unground
     action: 'cart_clarify',
   });
   assert.deepEqual(await consult('Туя безопасна для кошек?', plants, []), { action: 'handoff' });
+});
+
+test('a copied care profile identifies the documented plant and checks sale availability separately', async () => {
+  const dir = mkdtempDisposableSync(join(tmpdir(), 'nursery-profile-'));
+  let modelCalls = 0;
+  const app = await boot(dir.path, async () => {
+    modelCalls++;
+    return null;
+  });
+  const buyer = browser(app.url);
+  const juniper = 'juniperus-sabina';
+  const copied = `Полив
+Редкий умеренный полив; после укоренения засухоустойчив.
+Освещение
+Солнце; допускает легкую полутень.
+Почва
+Сухая или умеренно влажная, песчаная, щелочная или нейтральная, хорошо дренированная почва.
+Обрезка
+Санитарная обрезка ранней весной; сильную стрижку проводить постепенно.
+Цветение
+Декоративного цветения нет; образует шишкоягоды.
+Зимостойкость
+Зона 3-7 · до -40 °C. Высокая зимостойкость; важно избегать застоя воды зимой.
+Высота
+80–150 см
+мне нужен такой цветок что подскажете`;
+  const ask = (text, request_id) =>
+    buyer('/api/shop/conversation', {
+      method: 'POST',
+      body: { text, request_id },
+    });
+  try {
+    await buyer('/api/shop/register', {
+      method: 'POST',
+      status: 201,
+      body: { username: 'profile-buyer', name: 'Покупатель', password: 'test-profile-password' },
+    });
+    const before = await ask(copied, 'profile');
+    assert.equal(before.state, 'assistant');
+    assert.deepEqual(before.items.at(-1).plant_ids, [juniper]);
+    assert.match(before.items.at(-1).text, /Описание совпадает с карточкой «Можжевельник казацкий»/);
+    assert.match(before.items.at(-1).text, /Сейчас нет готовых к продаже экземпляров/);
+    assert.match(before.items.at(-1).text, /до -40 °C/i);
+    assert.equal(modelCalls, 0);
+
+    const nearby = await ask('Подберите для полутени, редкий полив и морозы до -40 градусов.', 'filter');
+    assert.equal(nearby.state, 'assistant');
+    assert.match(nearby.items.at(-1).text, /По справочнику подходят/);
+    assert.ok(nearby.items.at(-1).plant_ids.includes(juniper));
+
+    app.inventory.create({ plant_id: juniper, stage: 'ready', location: 'Теплица', quantity: 5 });
+    const after = await ask(copied, 'stock-update');
+    assert.match(after.items.at(-1).text, /5 шт. готово к продаже/);
+  } finally {
+    await app.stop();
+    dir.remove();
+  }
 });
 
 test('Responses API interprets recent chat and cart requests, while the server validates stock and facts', async () => {

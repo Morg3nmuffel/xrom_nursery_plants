@@ -11,6 +11,7 @@ const fields = {
   availability: 'Наличие',
   price: 'Цена',
 };
+const profileFields = ['light', 'watering', 'soil', 'pruning', 'flowering', 'hardiness', 'height'];
 
 export const clarificationPrompts = {
   conditions: 'Расскажите, где будет расти растение, сколько там солнца и как часто сможете поливать.',
@@ -65,6 +66,48 @@ export function careValue(plant, field) {
       ? null
       : 'До ' + plant.min_temperature_c + ' °C, зона ' + plant.hardiness_zone + '. ' + plant.hardiness_notes;
   return plant[field] || null;
+}
+
+function profileCandidates(question, plants) {
+  const words = tokens(question);
+  const text = ' ' + words.join(' ') + ' ';
+  const stem = (word) => word.slice(0, 5);
+  const clues = new Set(words.filter((word) => word.length >= 5).map(stem));
+  return plants
+    .map((plant) => {
+      let exactWords = 0;
+      let relatedFields = 0;
+      const exactFields = [];
+      for (const field of profileFields) {
+        const value = field === 'hardiness' ? plant.hardiness_notes : careValue(plant, field);
+        if (!value) continue;
+        const full = tokens(value);
+        const phrases = [full, ...value.split(/[.;]/).map(tokens)];
+        const longest = Math.max(
+          0,
+          ...phrases
+            .filter(
+              (phrase) =>
+                phrase.length >= (field === 'height' ? 3 : 4) && text.includes(' ' + phrase.join(' ') + ' '),
+            )
+            .map((phrase) => phrase.length),
+        );
+        if (longest) {
+          exactFields.push(field);
+          exactWords += longest;
+        }
+        const common = new Set(full.filter((word) => word.length >= 5 && clues.has(stem(word))).map(stem));
+        if (common.size >= 2) relatedFields++;
+      }
+      return { plant, exactFields, exactWords, relatedFields };
+    })
+    .filter((item) => item.exactFields.length || item.relatedFields >= 2)
+    .sort(
+      (a, b) =>
+        b.exactFields.length - a.exactFields.length ||
+        b.exactWords - a.exactWords ||
+        b.relatedFields - a.relatedFields,
+    );
 }
 
 const topicPatterns = {
@@ -265,9 +308,28 @@ export async function consult(
   const explicit = explicitAction(question, plants, context);
   if (explicit && (explicit.action !== 'cart_clarify' || !cartRequest(normalize(question)))) return explicit;
   if (unsupported.test(normalize(question))) return { action: 'handoff' };
+  const named = mentionedPlants(question, plants);
+  const profiles = !explicit && !named.length ? profileCandidates(question, plants) : [];
+  const [first, second] = profiles;
+  if (
+    first?.exactFields.filter((field) => field !== 'height').length >= 2 &&
+    first.exactWords >= 12 &&
+    first.exactFields.length > (second?.exactFields.length ?? 0)
+  ) {
+    return {
+      action: 'care',
+      plant_ids: [first.plant.id],
+      fields: [...first.exactFields, 'availability'],
+      matchedProfile: true,
+    };
+  }
   const base = explicit ?? localPlan(question, plants, context, followUp);
   if (!planner) return base;
-  const focused = new Set([...context, ...mentionedPlants(question, plants).map((plant) => plant.id)]);
+  const focused = new Set([
+    ...context,
+    ...named.map((plant) => plant.id),
+    ...profiles.slice(0, 3).map(({ plant }) => plant.id),
+  ]);
   const ready = new Map(stock.map((plant) => [plant.id, plant]));
   let choice;
   try {
@@ -312,7 +374,12 @@ export async function consult(
       requested.every((field) => typeof field === 'string' && Object.hasOwn(fields, field)) &&
       (base.action !== 'care' || base.fields.every((field) => requested.includes(field)))
     ) {
-      return { action: 'care', plant_ids: ids, fields: [...new Set(requested)] };
+      const described = !named.length && profiles.some(({ plant }) => ids.includes(plant.id));
+      return {
+        action: 'care',
+        plant_ids: ids,
+        fields: [...new Set(described ? [...requested, 'availability'] : requested)],
+      };
     }
   }
   if (choice.action === 'recommend') {

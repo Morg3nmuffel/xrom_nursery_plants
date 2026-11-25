@@ -168,15 +168,24 @@ export function createShop(db, planner) {
             if (!value) return null;
             lines.push(fieldLabels[field] + ' — ' + value);
           }
-          blocks.push([plant.name + ' · по данным питомника', ...lines].join('\n'));
+          const heading = plan.matchedProfile
+            ? 'Описание совпадает с карточкой «' + plant.name + '»'
+            : plant.name + ' · по данным питомника';
+          blocks.push([heading, ...lines].join('\n'));
         }
         return { plantIds: ids, text: blocks.join('\n\n') };
       }
       case 'recommend': {
-        const items = readyPlants
+        const sellable = readyPlants
           .all()
           .filter((plant) => recommendation(plant, plan.filters))
           .slice(0, 3);
+        const items = sellable.length
+          ? sellable
+          : knowledge
+              .all()
+              .filter((plant) => recommendation(plant, plan.filters))
+              .slice(0, 3);
         if (!items.length) return null;
         const evidence = {
           light: 'light',
@@ -193,7 +202,12 @@ export function createShop(db, planner) {
         });
         return {
           plantIds: items.map((plant) => plant.id),
-          text: ['В наличии по указанным условиям', ...lines].join('\n'),
+          text: [
+            sellable.length
+              ? 'В наличии по указанным условиям'
+              : 'По справочнику подходят эти растения. Сейчас нет готовых к продаже экземпляров.',
+            ...lines,
+          ].join('\n'),
         };
       }
       case 'cart': {
