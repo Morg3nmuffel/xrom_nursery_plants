@@ -5,14 +5,19 @@ import { consultantFromEnvironment } from './consultant-model.mjs';
 
 async function main() {
   const [command = 'serve', file] = process.argv.slice(2);
-  if (!['serve', 'seed-demo', 'import-catalog'].includes(command)) {
-    throw new Error('Команды: serve | seed-demo | import-catalog [файл.json]');
+  if (!['serve', 'seed-demo', 'seed-demo-shop', 'import-catalog'].includes(command)) {
+    throw new Error('Команды: serve | seed-demo | seed-demo-shop | import-catalog [файл.json]');
   }
   const filename = inventoryDatabasePath();
   const db = openDatabase(filename);
   try {
     if (command === 'seed-demo') {
       console.log('Добавлено учебных партий:', new Inventory(db).seedDemo());
+      return;
+    }
+    if (command === 'seed-demo-shop') {
+      const { batches, prices } = new Inventory(db).seedDemoShop();
+      console.log(`Демокаталог: добавлено партий ${batches}, заполнено цен ${prices}.`);
       return;
     }
     if (command === 'import-catalog') {

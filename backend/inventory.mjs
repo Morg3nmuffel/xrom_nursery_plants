@@ -277,4 +277,24 @@ export class Inventory {
       return batches.length;
     });
   }
+
+  seedDemoShop() {
+    const items = JSON.parse(readFileSync(new URL('./examples/shop-demo.json', import.meta.url), 'utf8'));
+    return transaction(this.db, () => {
+      const marker = this.db.prepare("INSERT OR IGNORE INTO seed_runs(name) VALUES ('demo-shop-v1')").run();
+      if (!marker.changes) return { batches: 0, prices: 0 };
+      const plant = this.db.prepare('SELECT id FROM plants WHERE id = ? AND archived_at IS NULL');
+      const ready = this.db.prepare("SELECT 1 FROM inventory WHERE plant_id = ? AND stage = 'ready' AND quantity > 0 LIMIT 1");
+      const price = this.db.prepare('UPDATE plants SET price_kopecks = ? WHERE id = ? AND price_kopecks IS NULL');
+      const added = { batches: 0, prices: 0 };
+      for (const { plant_id, quantity, price_rub } of items) {
+        if (!plant.get(plant_id)) continue;
+        added.prices += price.run(priceKopecks(price_rub), plant_id).changes;
+        if (ready.get(plant_id)) continue;
+        this.insertBatch({ plant_id, location: 'Торговая площадка', stage: 'ready', quantity });
+        added.batches++;
+      }
+      return added;
+    });
+  }
 }

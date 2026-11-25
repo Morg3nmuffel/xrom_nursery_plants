@@ -175,6 +175,24 @@ test('all care fields survive SQL import; only the five pictured plant batches a
     ['clematis-nelly-moser', 'petunia-ampelnaya']);
 });
 
+test('demo shop seeds nine priced products once and preserves existing stock and prices', t => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  const inventory = new Inventory(db);
+  inventory.seedDemo();
+  inventory.setPrice(hydrangea, { price_rub: 1990 });
+  assert.deepEqual(inventory.seedDemoShop(), { batches: 7, prices: 8 });
+  const ready = inventory.list('ready').items;
+  assert.equal(new Set(ready.map((batch) => batch.plant_id)).size, 9);
+  const catalog = new Map(inventory.catalog().map((plant) => [plant.id, plant]));
+  assert.ok(ready.every(({ plant_id }) => catalog.get(plant_id).price_rub > 0));
+  assert.equal(catalog.get(hydrangea).price_rub, 1990);
+  assert.deepEqual(ready.filter((batch) => batch.plant_id === hydrangea).map((batch) => batch.quantity), [120]);
+  assert.equal(inventory.list('rooting').items.find((batch) => batch.plant_id === lavender).quantity, 300);
+  assert.deepEqual(inventory.seedDemoShop(), { batches: 0, prices: 0 });
+  assert.deepEqual(inventory.list('ready').items, ready);
+});
+
 test('admin login, editing, stage filters, history, logout and POS permissions', async t => {
   const { request, login } = await fixture(t);
   assert.equal((await request('GET', inventoryPath)).status, 401);

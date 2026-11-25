@@ -22,7 +22,7 @@ export const clarificationPrompts = {
   cart: 'Укажите название одного растения или номер из списка и количество.',
 };
 
-const normalize = (text) => text.toLowerCase().replaceAll('ё', 'е');
+const normalize = (text) => text.toLowerCase().replaceAll('ё', 'е').replace(/\s+/g, ' ').trim();
 const tokens = (text) => normalize(text).match(/[\p{L}\p{N}]+/gu) || [];
 const plantNames = (plant) => [plant.name, plant.scientific_name ?? '', plant.id].map(normalize);
 const subject = (plant) => tokens(plant.name)[0] || '';
@@ -151,7 +151,9 @@ function directRead(question, plants, named) {
   }
   if (!compare) return null;
   const requested = topics.length ? topics : comparisonFields;
-  const separated = /^\s*сравни(?:те|ть)?\s+(.+?)\s+и\s+(.+?)(?:\s+по\s+[^?!.]+)?[?!.\s]*$/iu.exec(question);
+  const separated = /^\s*сравни(?:те|ть)?\s+(.+?)\s+и\s+(.+?)(?:\s+по\s+[^?!.]+)?[?!.\s]*$/iu.exec(
+    question.replace(/\s+/g, ' '),
+  );
   if (separated) {
     const subjects = separated.slice(1).map((subject) => ({
       subject: subject.trim(),

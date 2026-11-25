@@ -60,7 +60,7 @@ export function ConversationMessages({ items, own, children }) {
   );
 }
 
-export function ChatComposer({ send, label, limit = 2000, suggestions = [] }) {
+export function ChatComposer({ send, label, limit = 2000, suggestions = [], submitOnEnter = false }) {
   const [draft, setDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -113,6 +113,21 @@ export function ChatComposer({ send, label, limit = 2000, suggestions = [] }) {
           value={draft}
           disabled={busy}
           onChange={(event) => edit(event.target.value)}
+          onKeyDown={(event) => {
+            if (
+              !submitOnEnter ||
+              event.key !== 'Enter' ||
+              event.shiftKey ||
+              event.altKey ||
+              event.ctrlKey ||
+              event.metaKey ||
+              event.nativeEvent.isComposing ||
+              event.keyCode === 229
+            )
+              return;
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }}
           required
         />
         <button type="submit" className="btn primary" disabled={busy || !draft.trim()}>

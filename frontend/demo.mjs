@@ -70,8 +70,12 @@ async function main() {
     PLANT_SERVICE_URL: urls.plants,
   };
   delete env.NURSERY_DEMO_PASSWORD;
-  for (const entry of ['server.mjs', 'consumables/server.mjs']) {
-    const result = spawnSync(process.execPath, [entry, 'seed-demo'], { cwd: base, env, stdio: 'inherit' });
+  for (const args of [
+    ['server.mjs', 'seed-demo'],
+    ['server.mjs', 'seed-demo-shop'],
+    ['consumables/server.mjs', 'seed-demo'],
+  ]) {
+    const result = spawnSync(process.execPath, args, { cwd: base, env, stdio: 'inherit' });
     if (result.status !== 0) throw new Error('Не удалось подготовить учебные данные.');
   }
   for (const entry of ['server.mjs', 'tasks/server.mjs', 'consumables/server.mjs']) {

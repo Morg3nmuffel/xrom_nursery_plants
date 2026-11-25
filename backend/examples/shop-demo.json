@@ -1,0 +1,11 @@
+[
+  { "plant_id": "hydrangea-paniculata-limelight", "quantity": 24, "price_rub": 1500 },
+  { "plant_id": "thuja-occidentalis-smaragd", "quantity": 24, "price_rub": 1290 },
+  { "plant_id": "lavandula-angustifolia", "quantity": 32, "price_rub": 450 },
+  { "plant_id": "juniperus-sabina", "quantity": 18, "price_rub": 1200 },
+  { "plant_id": "picea-omorika", "quantity": 15, "price_rub": 1750 },
+  { "plant_id": "rosa-westerland", "quantity": 26, "price_rub": 1290 },
+  { "plant_id": "spiraea-japonica-goldflame", "quantity": 28, "price_rub": 690 },
+  { "plant_id": "berberis-thunbergii-atropurpurea", "quantity": 20, "price_rub": 750 },
+  { "plant_id": "syringa-vulgaris-krasavitsa-moskvy", "quantity": 16, "price_rub": 1150 }
+]

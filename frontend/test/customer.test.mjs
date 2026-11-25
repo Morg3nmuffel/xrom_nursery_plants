@@ -344,7 +344,7 @@ test('the consultant keeps known comparison facts, escalates gaps and reads only
         body: { username, name: 'Покупатель', password: 'test-comparison-password' },
       });
     }
-    const stock = await ask(buyer, 'Что сейчас в наличии?', 'catalog');
+    const stock = await ask(buyer, 'Что сейчас\nв наличии?', 'catalog');
     assert.match(stock.items.at(-1).text, /Туя западная.*64 шт. в наличии/);
     assert.ok(!stock.items.at(-1).plant_ids.includes(juniper));
     await buyer('/api/shop/cart', {

@@ -187,6 +187,7 @@ function CustomerChat({ onCartChange }) {
             send={send}
             label="Ваше сообщение"
             suggestions={waitingForAdmin ? [] : suggestions}
+            submitOnEnter
           />
         )}
       </section>
