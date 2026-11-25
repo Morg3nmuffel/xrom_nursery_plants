@@ -18,6 +18,7 @@ async function main() {
       adminPassword: process.env.ADMIN_PASSWORD,
       timeZone: process.env.TASKS_TIME_ZONE || 'Europe/Moscow',
       intervalMs: Number(process.env.TASKS_INTERVAL_MS || 30_000),
+      seedDemoBoard: process.env.TASKS_DEMO_BOARD === '1',
     });
     const stop = () => server.close();
     process.once('SIGINT', stop);

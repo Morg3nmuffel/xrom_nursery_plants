@@ -8,12 +8,14 @@ const sessionLifetimeMs = 8 * 60 * 60 * 1000;
 
 export function createTasksService(db, {
   employees, adminUser, adminPassword, timeZone = 'Europe/Moscow', intervalMs = 30_000, clock,
+  seedDemoBoard = false,
 }) {
   if (!Number.isInteger(intervalMs) || intervalMs < 1 || intervalMs > 2147483647) {
     throw new Error('TASKS_INTERVAL_MS должен быть положительным целым числом до 2147483647.');
   }
   const planner = new TaskPlanner(db, { timeZone, clock });
   const roster = new Employees(db, employees);
+  if (seedDemoBoard) planner.seedDemoBoard();
   const sessions = new Map();
   const admin = adminPassword ? adminAccess({ adminUser, adminPassword }) : null;
 

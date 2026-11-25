@@ -40,6 +40,17 @@ const taskRows = `
   LEFT JOIN inventory i ON i.id = t.batch_id
   LEFT JOIN employees e ON e.id = t.assignee_id
   LEFT JOIN plant_care c ON c.plant_id = i.plant_id`;
+const insertManualTask = `INSERT INTO task_assignments(batch_id, assignee_id, title, instructions, due_on, created_at)
+  VALUES (?, ?, ?, ?, ?, ?) RETURNING id`;
+
+const demoBoard = [
+  ['Проверить влажность у гортензий', 'Осмотрите субстрат и отметьте партии, которым нужен полив.', 'hydrangea-paniculata-limelight', false],
+  ['Осмотреть тую перед выкладкой', 'Проверьте состояние хвои и этикетки на горшках.', 'thuja-occidentalis-smaragd', false],
+  ['Подготовить лаванду к выкладке', 'Перенесите подготовленные горшки в торговую зону.', 'lavandula-angustifolia', false],
+  ['Проверить маркировку роз', 'Сверьте сорт на этикетках с карточкой партии.', 'rosa-westerland', true],
+  ['Сверить количество можжевельников', 'Пересчитайте горшки и сверьте результат с учётом.', 'juniperus-sabina', true],
+  ['Проверить полив спиреи', 'Проверьте влажность субстрата в горшках на торговой площадке.', 'spiraea-japonica-goldflame', true],
+];
 
 function taskDetails(row) {
   const { title, instructions, care: fields } = Object.hasOwn(stageRules, row.stage) ? stageRules[row.stage] : defaultRule;
@@ -64,6 +75,11 @@ function formatTask(row) {
     status: row.completed_at ? 'done' : row.started_at ? 'in_progress' : 'todo',
     ...details,
   };
+}
+
+function completeTask(db, task, at, day) {
+  db.prepare(`UPDATE task_assignments SET completed_at = ?, completed_on = ?, completed_details_json = ? WHERE id = ?`)
+    .run(at, day, JSON.stringify(taskDetails(task)), task.id);
 }
 
 export class TaskPlanner {
@@ -172,9 +188,34 @@ export class TaskPlanner {
           !this.db.prepare('SELECT 1 FROM employees WHERE id = ? AND removed_at IS NULL').get(input.assignee_id))) invalid('Сотрудник не найден.');
       if (input.batch_id != null && (!Number.isSafeInteger(input.batch_id) ||
           !this.db.prepare('SELECT 1 FROM inventory WHERE id = ? AND quantity > 0').get(input.batch_id))) invalid('Выберите доступную партию.');
-      const { id } = this.db.prepare(`INSERT INTO task_assignments(batch_id, assignee_id, title, instructions, due_on, created_at)
-        VALUES (?, ?, ?, ?, ?, ?) RETURNING id`).get(input.batch_id ?? null, input.assignee_id ?? null, title, instructions, due, now.toISOString());
+      const { id } = this.db.prepare(insertManualTask)
+        .get(input.batch_id ?? null, input.assignee_id ?? null, title, instructions, due, now.toISOString());
       return formatTask(this.db.prepare(taskRows + ' WHERE t.id = ?').get(id));
+    });
+  }
+
+  seedDemoBoard() {
+    return transaction(this.db, () => {
+      const workers = this.db.prepare('SELECT id FROM employees WHERE removed_at IS NULL ORDER BY id').all();
+      if (!workers.length) return 0;
+      const marker = this.db.prepare("INSERT OR IGNORE INTO seed_runs(name) VALUES ('demo-task-board-v1')").run();
+      if (!marker.changes) return 0;
+      const now = this.clock();
+      const day = this.dateOf(now);
+      const created = new Date(now.getTime() - 90 * 60_000).toISOString();
+      const started = new Date(now.getTime() - 35 * 60_000).toISOString();
+      const batch = this.db.prepare(`SELECT id FROM inventory WHERE plant_id = ? AND quantity > 0
+        ORDER BY stage = 'ready' DESC, id LIMIT 1`);
+      const insert = this.db.prepare(insertManualTask);
+      const start = this.db.prepare('UPDATE task_assignments SET started_at = ? WHERE id = ?');
+      const read = this.db.prepare(taskRows + ' WHERE t.id = ?');
+      for (const [index, [title, instructions, plantId, done]] of demoBoard.entries()) {
+        const { id } = insert.get(batch.get(plantId)?.id ?? null, workers[index % workers.length].id,
+          title, instructions, day, created);
+        start.run(started, id);
+        if (done) completeTask(this.db, read.get(id), now.toISOString(), day);
+      }
+      return demoBoard.length;
     });
   }
 
@@ -209,9 +250,7 @@ export class TaskPlanner {
         this.db.prepare('UPDATE task_assignments SET started_at = ? WHERE id = ?').run(now.toISOString(), id);
       } else {
         if (!task.started_at) throw new ApiError(409, 'task_not_started', 'Сначала начните выполнение задачи.');
-        this.db.prepare(`UPDATE task_assignments
-          SET completed_at = ?, completed_on = ?, completed_details_json = ? WHERE id = ?`)
-          .run(now.toISOString(), this.dateOf(now), JSON.stringify(taskDetails(task)), id);
+        completeTask(this.db, task, now.toISOString(), this.dateOf(now));
       }
       return formatTask(read.get(id));
     });

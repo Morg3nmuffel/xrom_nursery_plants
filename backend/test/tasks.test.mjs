@@ -42,6 +42,23 @@ test('upgrading the five-assignee table retains finished tasks and accepts addit
   assert.deepEqual(db.prepare('PRAGMA foreign_key_check').all(), []);
 });
 
+test('the demo board keeps exactly three started and three finished examples through repeated starts', t => {
+  const db = openDatabase(':memory:');
+  t.after(() => db.close());
+  new Inventory(db).seedDemo();
+  const clock = () => new Date(beforeMidnight);
+  const options = { employees, timeZone, clock, seedDemoBoard: true };
+  createTasksService(db, options);
+  const planner = new TaskPlanner(db, { timeZone, clock });
+  const tasks = planner.list().items.filter(task => task.status !== 'todo');
+  assert.equal(tasks.filter(task => task.status === 'in_progress').length, 3);
+  assert.equal(tasks.filter(task => task.status === 'done').length, 3);
+  assert.ok(tasks.every(task => task.started_at && task.assignee_id && task.instructions));
+  assert.ok(tasks.every(task => !task.completed_at || task.completed_at === beforeMidnight));
+  createTasksService(db, options);
+  assert.deepEqual(planner.list().items.filter(task => task.status !== 'todo'), tasks);
+});
+
 test('the demo assigns each of five employees one task using stage and imported care', t => {
   const db = openDatabase(':memory:');
   t.after(() => db.close());

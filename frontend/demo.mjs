@@ -59,6 +59,7 @@ async function main() {
     INVENTORY_DB: join(data, 'inventory.sqlite'),
     MATERIALS_DB: join(data, 'materials.sqlite'),
     TASKS_EMPLOYEES_FILE: join(base, 'examples/task-employees.json'),
+    TASKS_DEMO_BOARD: '1',
     POS_TOKEN: randomBytes(32).toString('hex'),
     MATERIAL_SYNC_TOKEN: randomBytes(32).toString('hex'),
     INVENTORY_PORT: String(ports.plants),
