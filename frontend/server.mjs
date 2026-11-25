@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson, sendJson } from '../backend/http.mjs';
 import { ApiError } from '../backend/validation.mjs';
+import { roleFromPath, roleHome, roleLabels } from './roles.mjs';
 
 const files = new Map([
   ['/login.js', ['login.js', 'text/javascript']],
@@ -45,17 +46,18 @@ const loginRoles = new Map([
   ['/api/shop/register', 'customer'],
 ]);
 const bundles = { admin: 'ui', employee: 'employee', customer: 'customer' };
-const sessionName = 'nursery_admin';
 const sessionMs = 8 * 60 * 60 * 1000;
 
 export function createWebServer({ urls, secureCookie = false }) {
   const sessions = new Map();
   const attempts = new Map();
-  const cookie = (value, age) =>
-    sessionName +
+  const cookie = (name, path, value, age) =>
+    name +
     '=' +
     value +
-    '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' +
+    '; HttpOnly; SameSite=Strict; Path=' +
+    path +
+    '; Max-Age=' +
     age +
     (secureCookie ? '; Secure' : '');
 
@@ -121,11 +123,21 @@ export function createWebServer({ urls, secureCookie = false }) {
   }
 
   async function route(req, res) {
-    const { pathname, search } = new URL(req.url, 'http://localhost');
+    const { pathname: absolutePath, search } = new URL(req.url, 'http://localhost');
     const method = req.method;
-    const sid = /(?:^|;\s*)nursery_admin=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
+    const scope = roleFromPath(absolutePath);
+    const home = roleHome(scope);
+    if (scope && absolutePath === home.slice(0, -1) && method === 'GET') {
+      res.writeHead(308, { Location: home + search });
+      return res.end();
+    }
+    const pathname = scope ? absolutePath.slice(home.length - 1) : absolutePath;
+    const sessionName = scope ? 'nursery_session' : 'nursery_admin';
+    const sessionPattern = new RegExp('(?:^|;\\s*)' + sessionName + '=([a-f0-9]{64})(?:;|$)');
+    const sid = sessionPattern.exec(req.headers.cookie || '')?.[1];
     const now = Date.now();
     let session = sessions.get(sid);
+    if (session && session.scope !== scope) session = null;
     if (session && session.expires <= now) {
       sessions.delete(sid);
       session = null;
@@ -141,6 +153,9 @@ export function createWebServer({ urls, secureCookie = false }) {
     }
     const loginRole = loginRoles.get(pathname);
     if (loginRole && method === 'POST') {
+      if (scope && scope !== loginRole) {
+        throw new ApiError(403, 'wrong_role', 'Для входа откройте страницу выбранной роли.');
+      }
       prune(attempts, now);
       prune(sessions, now);
       const { username, password, name } = await readJson(req);
@@ -160,15 +175,15 @@ export function createWebServer({ urls, secureCookie = false }) {
         await revoke(session);
       }
       const id = randomBytes(32).toString('hex');
-      sessions.set(id, { username, role: loginRole, tokens, expires: now + sessionMs });
-      res.setHeader('Set-Cookie', cookie(id, sessionMs / 1000));
+      sessions.set(id, { username, role: loginRole, scope, tokens, expires: now + sessionMs });
+      res.setHeader('Set-Cookie', cookie(sessionName, home, id, sessionMs / 1000));
       return sendJson(res, registration ? 201 : 200, { username });
     }
     if (pathname.startsWith('/api/') || ['/ui.js', '/employee.js', '/customer.js'].includes(pathname)) {
       if (!session) throw new ApiError(401, 'unauthorized', 'Войдите в питомник.');
       if (pathname === '/api/logout' && method === 'POST') {
         sessions.delete(sid);
-        res.setHeader('Set-Cookie', cookie('', 0));
+        res.setHeader('Set-Cookie', cookie(sessionName, home, '', 0));
         await revoke(session);
         return sendJson(res, 200, { logged_out: true });
       }
@@ -182,7 +197,7 @@ export function createWebServer({ urls, secureCookie = false }) {
         const result = await upstream(service, path, method, session.tokens[service], body);
         if (result.status === 401) {
           sessions.delete(sid);
-          res.setHeader('Set-Cookie', cookie('', 0));
+          res.setHeader('Set-Cookie', cookie(sessionName, home, '', 0));
           await revoke(session);
         }
         return sendJson(res, result.status, result.data);
@@ -212,10 +227,13 @@ export function createWebServer({ urls, secureCookie = false }) {
       }
     }
     if (method === 'GET' && pathname === '/') {
+      const title = 'Питомник · ' + (scope ? roleLabels[scope] : 'Панель управления');
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return res.end(
-        '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Питомник · Панель управления</title><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script defer src="/' +
-          (session ? bundles[session.role] : 'login') +
+        '<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' +
+          title +
+          '</title><link rel="stylesheet" href="/style.css"></head><body><div id="root"></div><script defer src="' +
+          (session ? home + bundles[session.role] : '/login') +
           '.js"></script></body></html>',
       );
     }

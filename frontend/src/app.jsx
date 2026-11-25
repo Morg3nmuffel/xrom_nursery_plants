@@ -18,7 +18,7 @@ import {
   X,
   MessageCircle,
 } from 'lucide-react';
-import { api, Brand, Badge, Empty, stages, num, dateTime } from './shared';
+import { api, Brand, Badge, Empty, stages, num, dateTime, pageHome } from './shared';
 import { Modal, PanelHead, PlantTable, SearchBox, TaskBoard, TaskDetails, Care, PlantIcon } from './components';
 import { BatchForm, MaterialForm, StockForm } from './forms';
 import { CustomerQuestions } from './admin-chat';
@@ -496,7 +496,7 @@ function App() {
     setSigning(true);
     try {
       await api('logout', { method: 'POST' });
-      location.replace('/');
+      location.replace(pageHome);
     } catch (e) {
       setNotice(e.message);
       setSigning(false);

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Eye, EyeOff, LockKeyhole, UserRound, Leaf } from 'lucide-react';
-import { Brand, api } from './shared';
+import { Brand, api, pageRole, roleHome } from './shared';
 
 function Login() {
-  const [role, setRole] = useState('admin');
+  const [role, setRole] = useState(pageRole || 'admin');
   const [registering, setRegistering] = useState(false);
   const [shown, show] = useState(false),
     [error, setError] = useState(''),
@@ -22,13 +22,14 @@ function Login() {
       }[role];
       await api(endpoint, {
         method: 'POST',
+        home: roleHome(role),
         body: {
           username: form.get('username').trim(),
           password: form.get('password'),
           name: form.get('name') || undefined,
         },
       });
-      location.replace('/');
+      location.replace(roleHome(role));
     } catch (err) {
       setError(err.message);
       setBusy(false);

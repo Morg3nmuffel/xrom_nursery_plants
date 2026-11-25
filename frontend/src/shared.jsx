@@ -1,5 +1,10 @@
 import React from 'react';
 import { Sprout } from 'lucide-react';
+import { roleFromPath, roleHome } from '../roles.mjs';
+
+export const pageRole = roleFromPath(location.pathname);
+export const pageHome = roleHome(pageRole);
+export { roleHome };
 
 export function Brand() {
   return (
@@ -11,8 +16,8 @@ export function Brand() {
     </div>
   );
 }
-export async function api(path, { method = 'GET', body } = {}) {
-  const response = await fetch('/api/' + path, {
+export async function api(path, { method = 'GET', body, home = pageHome } = {}) {
+  const response = await fetch(home + 'api/' + path, {
     method,
     credentials: 'same-origin',
     cache: 'no-store',
@@ -22,7 +27,7 @@ export async function api(path, { method = 'GET', body } = {}) {
   const data = await response.json();
   if (!response.ok) {
     if (response.status === 401 && !['login', 'employee/login', 'shop/login', 'shop/register'].includes(path))
-      location.replace('/');
+      location.replace(pageHome);
     throw new Error(data.error?.message || 'Не удалось выполнить запрос.');
   }
   return data;

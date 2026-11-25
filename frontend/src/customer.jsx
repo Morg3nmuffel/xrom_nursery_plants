@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { Leaf, LogOut, MessageCircle, Minus, Plus, ShoppingBasket, Trash2 } from 'lucide-react';
 import { ChatComposer, ConversationMessages, useConversation } from './chat';
 import { PlantIcon, SearchBox } from './components';
-import { api, Brand, Empty, num } from './shared';
+import { api, Brand, Empty, num, pageHome } from './shared';
 
 const sections = [
   ['catalog', 'Каталог', Leaf],
@@ -242,7 +242,7 @@ function CustomerApp() {
   async function logout() {
     try {
       await api('logout', { method: 'POST' });
-      location.replace('/');
+      location.replace(pageHome);
     } catch (err) {
       setError(err.message);
     }

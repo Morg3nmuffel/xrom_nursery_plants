@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { LogOut, RefreshCw } from 'lucide-react';
-import { api, Brand } from './shared';
+import { api, Brand, pageHome } from './shared';
 import { FormFoot, Modal, TaskBoard, TaskDetails, useSubmit } from './components';
 
 function EmployeeTask({ task, close, changed }) {
@@ -71,7 +71,7 @@ function EmployeeApp() {
     setSigningOut(true);
     try {
       await api('logout', { method: 'POST' });
-      location.replace('/');
+      location.replace(pageHome);
     } catch (err) {
       setError(err.message);
       setSigningOut(false);

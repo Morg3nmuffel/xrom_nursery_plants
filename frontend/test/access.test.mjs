@@ -12,7 +12,7 @@ import { openMaterials } from '../../backend/consumables/db.mjs';
 import { Stock } from '../../backend/consumables/stock.mjs';
 import { createWebServer } from '../server.mjs';
 
-test('admin web session protects all three APIs, handles a planting and revokes access on logout', async () => {
+test('admin web session protects all three APIs, handles a planting and revokes access on logout', async (t) => {
   const db = openDatabase(':memory:'),
     stock = openMaterials(':memory:');
   const employees = JSON.parse(
@@ -107,6 +107,67 @@ test('admin web session protects all three APIs, handles a planting and revokes 
     );
     assert.equal((await call('/api/logout', { method: 'POST' })).status, 200);
     assert.equal((await call('/api/store/materials')).status, 401);
+
+    await t.test('one browser can sign into all three roles and log out of just one', async () => {
+      const browserCookies = new Map();
+      const request = async (path, { method = 'GET', body, overrideCookie } = {}) => {
+        const cookie =
+          overrideCookie ??
+          [...browserCookies.entries()]
+            .filter(([scope]) => path.startsWith(scope))
+            .map(([, value]) => value)
+            .join('; ');
+        const response = await fetch(app + path, {
+          method,
+          headers: {
+            Origin: app,
+            'Content-Type': 'application/json',
+            'X-Nursery-Request': '1',
+            Cookie: cookie,
+          },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+        const assigned = response.headers.get('set-cookie');
+        if (assigned) {
+          const scope = /; Path=([^;]+)/.exec(assigned)[1];
+          assert.equal(scope, '/' + path.split('/')[1] + '/');
+          if (assigned.includes('Max-Age=0')) browserCookies.delete(scope);
+          else browserCookies.set(scope, assigned.split(';')[0]);
+        }
+        return response;
+      };
+      assert.match(await (await request('/employee/')).text(), /Сотрудник/);
+      const registration = { username: 'tab-buyer', password: 'test-buyer-password', name: 'Покупатель' };
+      assert.equal(
+        (await request('/customer/api/shop/register', { method: 'POST', body: registration })).status,
+        201,
+      );
+      assert.equal((await request('/admin/api/login', { method: 'POST', body: auth })).status, 200);
+      const { username, password } = employees[0];
+      assert.equal(
+        (await request('/employee/api/employee/login', { method: 'POST', body: { username, password } }))
+          .status,
+        200,
+      );
+
+      for (const [scope, bundle, dataPath] of [
+        ['/admin/', 'ui.js', 'api/session'],
+        ['/employee/', 'employee.js', 'api/employee/tasks'],
+        ['/customer/', 'customer.js', 'api/shop/cart'],
+      ]) {
+        assert.match(await (await request(scope)).text(), new RegExp(scope + bundle.replace('.', '\\.')));
+        assert.equal((await request(scope + dataPath)).status, 200);
+      }
+      assert.equal((await request('/customer/api/login', { method: 'POST', body: auth })).status, 403);
+      assert.equal(
+        (await request('/admin/api/session', { overrideCookie: browserCookies.get('/customer/') })).status,
+        401,
+      );
+      assert.equal((await request('/admin/api/logout', { method: 'POST' })).status, 200);
+      assert.match(await (await request('/admin/')).text(), /login\.js/);
+      assert.equal((await request('/employee/api/employee/tasks')).status, 200);
+      assert.equal((await request('/customer/api/shop/cart')).status, 200);
+    });
   } finally {
     for (const server of servers.reverse()) await new Promise((r) => server.close(r));
     stock.close();
