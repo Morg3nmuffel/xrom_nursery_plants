@@ -67,6 +67,7 @@ export function createAiPlanner({ url, key, model } = {}) {
     throw new Error('CONSULTANT_API_URL должен использовать HTTPS или локальный HTTP.');
   const responses = !url || endpoint.pathname.endsWith('/responses');
   const selectedModel = model || defaultModel;
+  const deepSeekChat = /^deepseek-(?:flash|chat|v4(?:[.-].*)?)$/i.test(selectedModel);
   return async function plan(input) {
     const headers = { 'Content-Type': 'application/json' };
     if (key) headers.Authorization = 'Bearer ' + key;
@@ -85,7 +86,8 @@ export function createAiPlanner({ url, key, model } = {}) {
       : {
           model: selectedModel,
           temperature: 0,
-          max_tokens: 400,
+          max_tokens: deepSeekChat ? 650 : 400,
+          ...(deepSeekChat ? { thinking: { type: 'disabled' } } : {}),
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: instructions },

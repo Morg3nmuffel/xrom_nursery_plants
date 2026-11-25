@@ -75,12 +75,14 @@ async function boot(folder, planner) {
 test('registered buyers see ready stock and keep cart and full human handoff through a database restart', async () => {
   const directory = mkdtempDisposableSync(join(tmpdir(), 'nursery-customer-'));
   const providerQuestions = [];
+  const providerThinking = [];
   const provider = createServer(async (req, res) => {
     let input = '';
     for await (const chunk of req) input += chunk;
-    const { messages } = JSON.parse(input);
+    const { messages, thinking } = JSON.parse(input);
     const { question } = JSON.parse(messages[1].content);
     providerQuestions.push(question);
+    providerThinking.push(thinking);
     let decision;
     if (question.includes('поливать')) {
       decision = {
@@ -97,7 +99,7 @@ test('registered buyers see ready stock and keep cart and full human handoff thr
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify(decision) } }] }));
   });
-  const ai = createAiPlanner({ url: (await listen(provider)) + '/v1/chat/completions', model: 'test-model' });
+  const ai = createAiPlanner({ url: (await listen(provider)) + '/v1/chat/completions', model: 'deepseek-flash' });
   let app = await boot(directory.path, ai);
   const credentials = { username: 'buyer.one', password: 'test-customer-password' };
   const message = (client, text, id) =>
@@ -166,6 +168,7 @@ test('registered buyers see ready stock and keep cart and full human handoff thr
       [thuja]: 1,
     });
     assert.equal(providerQuestions.length, 2);
+    assert.deepEqual(providerThinking, [{ type: 'disabled' }, { type: 'disabled' }]);
 
     const ask = 'Можно ли выращивать гортензию рядом с аквариумом?';
     const escalated = await message(buyer, ask, 'unknown');
