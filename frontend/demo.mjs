@@ -4,8 +4,6 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 import { once } from 'node:events';
-import { createInterface } from 'node:readline/promises';
-import { Writable } from 'node:stream';
 import { parseEnv } from 'node:util';
 import { createWebServer } from './server.mjs';
 
@@ -30,26 +28,7 @@ async function password() {
   } catch (error) {
     if (error.code !== 'ENOENT') throw error;
   }
-  if (!process.stdin.isTTY)
-    throw new Error('Запустите демоверсию в терминале или задайте NURSERY_DEMO_PASSWORD в .env.local-admin.');
-  const rl = createInterface({
-    input: process.stdin,
-    output: new Writable({
-      write(_chunk, _enc, cb) {
-        cb();
-      },
-    }),
-    terminal: true,
-  });
-  try {
-    process.stdout.write('Задайте пароль администратора для этого запуска (ввод скрыт): ');
-    const value = await rl.question('');
-    process.stdout.write('\n');
-    if (!value.trim()) throw new Error('Нужен непустой пароль.');
-    return value;
-  } finally {
-    rl.close();
-  }
+  return 'demo-admin';
 }
 async function main() {
   const env = {
