@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtempDisposableSync } from 'node:fs';
+import { mkdtempDisposableSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -8,7 +8,7 @@ import test from 'node:test';
 import { createService } from '../../backend/api.mjs';
 import { createMaterialsService } from '../../backend/consumables/api.mjs';
 import { openMaterials } from '../../backend/consumables/db.mjs';
-import { consult, createAiPlanner } from '../../backend/consultant.mjs';
+import { consult, consultantFromEnvironment, createAiPlanner } from '../../backend/consultant.mjs';
 import { openDatabase } from '../../backend/db.mjs';
 import { Inventory } from '../../backend/inventory.mjs';
 import { createTasksService } from '../../backend/tasks/api.mjs';
@@ -252,4 +252,91 @@ test('without a model the consultant can ask for conditions and rejects unground
     action: 'cart_clarify',
   });
   assert.deepEqual(await consult('Туя безопасна для кошек?', plants, []), { action: 'handoff' });
+});
+
+test('Responses API interprets recent chat and cart requests, while the server validates stock and facts', async () => {
+  const directory = mkdtempDisposableSync(join(tmpdir(), 'nursery-responses-'));
+  const envFile = join(directory.path, '.env');
+  const requests = [];
+  const decisions = [
+    { action: 'clarify', clarification: 'light' },
+    { action: 'recommend', filters: { light: 'partial', group: null } },
+    { action: 'care', plant_ids: [hydrangea, thuja], fields: ['availability'], text: '1000 шт.' },
+    { action: 'cart', plant_ids: [thuja], quantity: 2 },
+    { action: 'cart', plant_ids: [thuja], quantity: 12 },
+  ];
+  const provider = createServer(async (req, res) => {
+    let input = '';
+    for await (const chunk of req) input += chunk;
+    const request = JSON.parse(input);
+    requests.push({
+      path: req.url,
+      auth: req.headers.authorization,
+      ...request,
+      input: JSON.parse(request.input),
+    });
+    const decision = decisions[requests.length - 1];
+    res.setHeader('Content-Type', 'application/json');
+    res.end(
+      JSON.stringify({
+        status: 'completed',
+        output: [{ type: 'message', content: [{ type: 'output_text', text: JSON.stringify(decision) }] }],
+      }),
+    );
+  });
+  const endpoint = (await listen(provider)) + '/v1/responses';
+  const app = await boot(directory.path, consultantFromEnvironment(envFile, {}));
+  const buyer = browser(app.url);
+  const ask = (text, request_id) =>
+    buyer('/api/shop/conversation', { method: 'POST', body: { text, request_id } });
+  const configure = (key) =>
+    writeFileSync(
+      envFile,
+      [
+        'OPENAI_API_KEY=unused-for-other-providers',
+        'CONSULTANT_API_KEY=' + key,
+        'CONSULTANT_API_URL=' + endpoint,
+        'CONSULTANT_MODEL=gpt-5.4-mini',
+      ].join('\n'),
+    );
+  try {
+    assert.equal(createAiPlanner({ model: 'gpt-5.4-mini' }), null);
+    await buyer('/api/shop/register', {
+      method: 'POST',
+      status: 201,
+      body: { username: 'response.buyer', name: 'Покупатель', password: 'test-response-password' },
+    });
+    const greetings = await ask('Здравствуйте', 'before-key');
+    assert.match(greetings.items.at(-1).text, /Могу помочь/);
+    assert.equal(requests.length, 0);
+
+    configure('test-provider-key');
+    const clarification = await ask('Хочу что-нибудь посадить у забора', 'site');
+    assert.match(clarification.items.at(-1).text, /Сколько прямого солнца/);
+    const result = await ask('Прямые лучи только до десяти утра', 'lighting');
+    assert.deepEqual(result.items.at(-1).plant_ids, [hydrangea, thuja]);
+    assert.ok(requests[1].input.history.some((item) => item.text === 'Хочу что-нибудь посадить у забора'));
+    assert.equal(requests[1].input.awaiting_conditions, true);
+    assert.equal(requests[0].path, '/v1/responses');
+    assert.equal(requests[0].store, false);
+    assert.equal(requests[0].text.format.strict, true);
+    assert.equal(requests[0].auth, 'Bearer test-provider-key');
+    assert.ok(!JSON.stringify(requests[0].input).includes('test-response-password'));
+
+    const comparison = await ask('Есть в продаже гортензия и туя?', 'comparison');
+    assert.match(comparison.items.at(-1).text, /120 шт./);
+    assert.match(comparison.items.at(-1).text, /64 шт./);
+    assert.doesNotMatch(comparison.items.at(-1).text, /1000 шт./);
+
+    configure('rotated-provider-key');
+    const added = await ask('Я возьму пару экземпляров второй из списка', 'model-cart');
+    assert.match(added.items.at(-1).text, /В корзину добавлено 2 шт./);
+    assert.equal(requests[3].auth, 'Bearer rotated-provider-key');
+    await ask('Я возьму ещё тую', 'unjustified-quantity');
+    assert.equal((await buyer('/api/shop/cart')).items[0].quantity, 2);
+  } finally {
+    await app.stop();
+    await close(provider);
+    directory.remove();
+  }
 });

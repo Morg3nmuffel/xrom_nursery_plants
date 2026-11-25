@@ -3,7 +3,7 @@ import { promisify } from 'node:util';
 import { bearerToken, missingRoute, readJson, send, unauthorized } from './http.mjs';
 import { transaction } from './sqlite.mjs';
 import { ApiError, invalid, quantity, string } from './validation.mjs';
-import { careValue, consult, fieldLabels, recommendation } from './consultant.mjs';
+import { careValue, clarificationPrompts, consult, fieldLabels, recommendation } from './consultant.mjs';
 
 const hashPassword = promisify(scrypt);
 const lifetime = 8 * 60 * 60 * 1000;
@@ -12,9 +12,6 @@ const stock = `SELECT plant_id, SUM(quantity) AS available
   FROM plant_batches WHERE stage = 'ready' AND archived_at IS NULL AND quantity > 0 GROUP BY plant_id`;
 const handoff =
   'Не удалось найти подтверждённый ответ в базе питомника. Передал вопрос и переписку администратору. Ответ появится в этом чате.';
-const askConditions =
-  'Расскажите, где будет расти растение, сколько там солнца и как часто сможете поливать.';
-
 export function createShop(db, planner) {
   const sessions = new Map();
   const authAttempts = new Map();
@@ -50,6 +47,10 @@ export function createShop(db, planner) {
   const lastReply = db.prepare(
     "SELECT text FROM customer_messages WHERE customer_id = ? AND author = 'assistant' ORDER BY id DESC LIMIT 1",
   );
+  const recent = db.prepare(`SELECT author, substr(text, 1, 650) AS text FROM customer_messages
+    WHERE customer_id = ? AND id > COALESCE((
+      SELECT MAX(id) FROM customer_messages WHERE customer_id = ? AND author = 'admin'
+    ), 0) ORDER BY id DESC LIMIT 8`);
 
   function rateLimit(map, key, limit) {
     const time = Date.now();
@@ -137,17 +138,39 @@ export function createShop(db, planner) {
   function answer(id, plan) {
     switch (plan.action) {
       case 'care': {
-        const plant = knowledge.all().find((item) => item.id === plan.plant_id);
-        if (!plant) return null;
-        const values = plan.fields.map((field) => [fieldLabels[field], careValue(plant, field)]);
-        if (values.some(([, value]) => !value)) return null;
-        return {
-          plantIds: [plant.id],
-          text: [
-            plant.name + ' · из справочника питомника',
-            ...values.map(([label, value]) => label + ' — ' + value),
-          ].join('\n'),
-        };
+        const ids = plan.plant_ids ?? [plan.plant_id];
+        const known = new Map(knowledge.all().map((plant) => [plant.id, plant]));
+        const ready = new Map(readyPlants.all().map((plant) => [plant.id, plant]));
+        const blocks = [];
+        for (const plantId of ids) {
+          const plant = known.get(plantId);
+          if (!plant) return null;
+          const sellable = ready.get(plantId);
+          const lines = [];
+          for (const field of plan.fields) {
+            let value;
+            if (field === 'availability') {
+              value = sellable
+                ? sellable.available + ' шт. готово к продаже'
+                : 'Сейчас нет готовых к продаже экземпляров';
+            } else if (field === 'price') {
+              value =
+                sellable?.price_rub == null
+                  ? null
+                  : new Intl.NumberFormat('ru-RU', {
+                      style: 'currency',
+                      currency: 'RUB',
+                      maximumFractionDigits: 2,
+                    }).format(sellable.price_rub);
+            } else {
+              value = careValue(plant, field);
+            }
+            if (!value) return null;
+            lines.push(fieldLabels[field] + ' — ' + value);
+          }
+          blocks.push([plant.name + ' · по данным питомника', ...lines].join('\n'));
+        }
+        return { plantIds: ids, text: blocks.join('\n\n') };
       }
       case 'recommend': {
         const items = readyPlants
@@ -188,7 +211,9 @@ export function createShop(db, planner) {
       case 'cart_clarify':
         return { text: 'Укажите название одного растения и количество. Например, «Добавь 2 туи в корзину».' };
       case 'clarify':
-        return { text: askConditions };
+        return { text: clarificationPrompts[plan.clarification ?? 'conditions'] };
+      case 'greeting':
+        return { text: 'Могу помочь с выбором растений, уходом, наличием и корзиной. Что вас интересует?' };
       default:
         return null;
     }
@@ -202,13 +227,18 @@ export function createShop(db, planner) {
     rateLimit(answerAttempts, id, 20);
     const context = JSON.parse(lastReferences.get(id)?.plant_ids ?? '[]');
     // An explicitly requested cart action can still be fulfilled while a person handles the conversation.
-    const followUp = lastReply.get(id)?.text === askConditions;
+    const lastPrompt = lastReply.get(id)?.text;
+    const followUp = ['conditions', 'light', 'watering', 'size'].some(
+      (key) => lastPrompt === clarificationPrompts[key],
+    );
     const plan = await consult(
       text,
       knowledge.all(),
       context,
       state === 'pending' ? null : planner,
       followUp,
+      state === 'pending' ? [] : recent.all(id, id).reverse(),
+      state === 'pending' ? [] : readyPlants.all(),
     );
     return transaction(db, () => {
       if (seen.get(id, requestId)) return thread(id);

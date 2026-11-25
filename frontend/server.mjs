@@ -68,7 +68,7 @@ export function createWebServer({ urls, secureCookie = false }) {
         method,
         headers,
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(path === '/api/shop/conversation' && method === 'POST' ? 13_000 : 6000),
         redirect: 'error',
       });
       return { status: response.status, data: await response.json() };
