@@ -10,8 +10,15 @@ const lifetime = 8 * 60 * 60 * 1000;
 const now = () => new Date().toISOString();
 const stock = `SELECT plant_id, SUM(quantity) AS available
   FROM plant_batches WHERE stage = 'ready' AND archived_at IS NULL AND quantity > 0 GROUP BY plant_id`;
-const handoff =
-  'Не удалось найти подтверждённый ответ в базе питомника. Передал вопрос и переписку администратору. Ответ появится в этом чате.';
+const handoff = 'Передал вопрос и переписку администратору. Ответ появится в этом чате.';
+const fullHandoff = 'Не удалось найти подтверждённый ответ в базе питомника. ' + handoff;
+const missingConditions = 'По остальным условиям запроса недостаточно подтверждённых сведений.';
+const cartReplyStart = 'В вашей корзине';
+const rubles = new Intl.NumberFormat('ru-RU', {
+  style: 'currency',
+  currency: 'RUB',
+  maximumFractionDigits: 2,
+});
 export function createShop(db, planner) {
   const sessions = new Map();
   const authAttempts = new Map();
@@ -20,7 +27,7 @@ export function createShop(db, planner) {
     FROM (${stock}) s JOIN plants p ON p.id = s.plant_id
     LEFT JOIN plant_care c ON c.plant_id = p.id
     WHERE p.archived_at IS NULL ORDER BY p.name, p.id`);
-  const knowledge = db.prepare(`SELECT p.id, p.name, c.* FROM plants p
+  const knowledge = db.prepare(`SELECT p.id, p.name, p.price_kopecks / 100.0 AS price_rub, c.* FROM plants p
     LEFT JOIN plant_care c ON c.plant_id = p.id WHERE p.archived_at IS NULL ORDER BY p.id`);
   const available = db.prepare(`SELECT COALESCE(SUM(b.quantity), 0) AS quantity FROM plant_batches b
     JOIN plants p ON p.id = b.plant_id WHERE p.id = ? AND p.archived_at IS NULL AND b.archived_at IS NULL AND b.stage = 'ready'`);
@@ -50,7 +57,7 @@ export function createShop(db, planner) {
   const recent = db.prepare(`SELECT author, substr(text, 1, 650) AS text FROM customer_messages
     WHERE customer_id = ? AND id > COALESCE((
       SELECT MAX(id) FROM customer_messages WHERE customer_id = ? AND author = 'admin'
-    ), 0) ORDER BY id DESC LIMIT 8`);
+    ), 0) AND NOT (author = 'assistant' AND text LIKE ?) ORDER BY id DESC LIMIT 8`);
 
   function rateLimit(map, key, limit) {
     const time = Date.now();
@@ -135,45 +142,87 @@ export function createShop(db, planner) {
     ).run(id, plantId, count);
   }
 
+  function plantFacts(plant, stockCount, requested) {
+    return requested.map((field) => {
+      if (field === 'availability')
+        return stockCount ? stockCount + ' шт. готово к продаже' : 'Сейчас нет готовых к продаже экземпляров';
+      if (field === 'price') return plant.price_rub == null ? null : rubles.format(plant.price_rub);
+      return careValue(plant, field);
+    });
+  }
+
+  function factsBlock(plant, stockCount, requested, heading) {
+    const values = plantFacts(plant, stockCount, requested);
+    const lines = requested.map(
+      (field, index) =>
+        fieldLabels[field] + ' — ' + (values[index] ?? 'недостаточно информации в базе питомника.'),
+    );
+    return { text: [heading, ...lines].join('\n'), hasMissing: values.some((value) => value == null) };
+  }
+
   function answer(id, plan) {
     switch (plan.action) {
       case 'care': {
-        const ids = plan.plant_ids ?? [plan.plant_id];
+        const plantIds = plan.plant_ids ?? [plan.plant_id];
         const known = new Map(knowledge.all().map((plant) => [plant.id, plant]));
         const ready = new Map(readyPlants.all().map((plant) => [plant.id, plant]));
-        const blocks = [];
-        for (const plantId of ids) {
-          const plant = known.get(plantId);
-          if (!plant) return null;
-          const sellable = ready.get(plantId);
-          const lines = [];
-          for (const field of plan.fields) {
-            let value;
-            if (field === 'availability') {
-              value = sellable
-                ? sellable.available + ' шт. готово к продаже'
-                : 'Сейчас нет готовых к продаже экземпляров';
-            } else if (field === 'price') {
-              value =
-                sellable?.price_rub == null
-                  ? null
-                  : new Intl.NumberFormat('ru-RU', {
-                      style: 'currency',
-                      currency: 'RUB',
-                      maximumFractionDigits: 2,
-                    }).format(sellable.price_rub);
-            } else {
-              value = careValue(plant, field);
-            }
-            if (!value) return null;
-            lines.push(fieldLabels[field] + ' — ' + value);
-          }
+        const blocks = plantIds.map((id) => {
+          const plant = known.get(id);
+          if (!plant)
+            return { text: 'Для одной из позиций больше нет карточки в справочнике.', hasMissing: true };
           const heading = plan.matchedProfile
             ? 'Описание совпадает с карточкой «' + plant.name + '»'
             : plant.name + ' · по данным питомника';
-          blocks.push([heading, ...lines].join('\n'));
+          return factsBlock(plant, ready.get(id)?.available, plan.fields, heading);
+        });
+        for (const name of plan.missing ?? []) {
+          blocks.push({ text: '«' + name + '» — недостаточно информации в справочнике.', hasMissing: true });
         }
-        return { plantIds: ids, text: blocks.join('\n\n') };
+        if (plan.extraMissing) blocks.push({ text: missingConditions, hasMissing: true });
+        return {
+          plantIds,
+          text: blocks.map((block) => block.text).join('\n\n'),
+          needsAdmin: blocks.some((block) => block.hasMissing),
+        };
+      }
+      case 'catalog_read': {
+        const items = readyPlants.all();
+        if (!items.length) return { text: 'Сейчас в каталоге нет растений, готовых к продаже.' };
+        const lines = items.map(
+          (plant) =>
+            plant.name +
+            ' — ' +
+            plant.available +
+            ' шт. в наличии' +
+            (plant.price_rub == null ? '' : ', ' + rubles.format(plant.price_rub) + ' за шт.'),
+        );
+        return { plantIds: items.map((plant) => plant.id), text: ['Готовы к продаже', ...lines].join('\n') };
+      }
+      case 'cart_read': {
+        const items = cartRows
+          .all(id)
+          .filter((item) => !plan.plant_ids.length || plan.plant_ids.includes(item.plant_id));
+        if (!items.length)
+          return {
+            text: plan.plant_ids.length
+              ? cartReplyStart + ' нет этих растений.'
+              : cartReplyStart + ' пока ничего нет.',
+          };
+        const known = new Map(knowledge.all().map((plant) => [plant.id, plant]));
+        const blocks = items.map((item) => {
+          const heading =
+            item.name +
+            ' — ' +
+            item.quantity +
+            ' шт.' +
+            (item.quantity > item.available ? ' (в наличии ' + item.available + ' шт.)' : '');
+          return factsBlock(known.get(item.plant_id) ?? item, item.available, plan.fields, heading);
+        });
+        if (plan.extraMissing) blocks.push({ text: missingConditions, hasMissing: true });
+        return {
+          text: [cartReplyStart, ...blocks.map((block) => block.text)].join('\n\n'),
+          needsAdmin: blocks.some((block) => block.hasMissing),
+        };
       }
       case 'recommend': {
         const sellable = readyPlants
@@ -240,7 +289,7 @@ export function createShop(db, planner) {
     const state = conversation.get(id).state;
     rateLimit(answerAttempts, id, 20);
     const context = JSON.parse(lastReferences.get(id)?.plant_ids ?? '[]');
-    // An explicitly requested cart action can still be fulfilled while a person handles the conversation.
+    // Cart and catalogue actions remain available while someone handles the conversation.
     const lastPrompt = lastReply.get(id)?.text;
     const followUp = ['conditions', 'light', 'watering', 'size'].some(
       (key) => lastPrompt === clarificationPrompts[key],
@@ -251,7 +300,7 @@ export function createShop(db, planner) {
       context,
       state === 'pending' ? null : planner,
       followUp,
-      state === 'pending' ? [] : recent.all(id, id).reverse(),
+      state === 'pending' ? [] : recent.all(id, id, cartReplyStart + '%').reverse(),
       state === 'pending' ? [] : readyPlants.all(),
     );
     return transaction(db, () => {
@@ -259,18 +308,20 @@ export function createShop(db, planner) {
       const current = conversation.get(id).state;
       const posted = now();
       addMessage.run(id, 'customer', text, posted, requestId, null);
-      const automated = current !== 'pending' || ['cart', 'cart_clarify'].includes(plan.action);
+      const automated =
+        current !== 'pending' || ['cart', 'cart_clarify', 'cart_read', 'catalog_read'].includes(plan.action);
       if (automated) {
         const reply = answer(id, plan);
+        const replyText = reply ? reply.text + (reply.needsAdmin ? '\n\n' + handoff : '') : fullHandoff;
         addMessage.run(
           id,
           'assistant',
-          reply?.text ?? handoff,
+          replyText,
           posted,
           null,
           reply?.plantIds ? JSON.stringify(reply.plantIds) : null,
         );
-        updateConversation.run(reply ? current : 'pending', posted, id);
+        updateConversation.run(reply && !reply.needsAdmin ? current : 'pending', posted, id);
       } else {
         updateConversation.run('pending', posted, id);
       }

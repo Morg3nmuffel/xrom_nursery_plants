@@ -317,6 +317,90 @@ test('a copied care profile identifies the documented plant and checks sale avai
   }
 });
 
+test('the consultant keeps known comparison facts, escalates gaps and reads only the current buyer cart', async () => {
+  const dir = mkdtempDisposableSync(join(tmpdir(), 'nursery-comparison-'));
+  const modelInputs = [];
+  const app = await boot(dir.path, async (input) => {
+    modelInputs.push(input);
+    return { action: 'greeting' };
+  });
+  const buyer = browser(app.url);
+  const other = browser(app.url);
+  const admin = browser(app.url);
+  const juniper = 'juniperus-sabina';
+  const ask = (client, text, request_id) =>
+    client('/api/shop/conversation', {
+      method: 'POST',
+      body: { text, request_id },
+    });
+  try {
+    for (const [client, username] of [
+      [buyer, 'compare-buyer'],
+      [other, 'other-buyer'],
+    ]) {
+      await client('/api/shop/register', {
+        method: 'POST',
+        status: 201,
+        body: { username, name: 'Покупатель', password: 'test-comparison-password' },
+      });
+    }
+    const stock = await ask(buyer, 'Что сейчас в наличии?', 'catalog');
+    assert.match(stock.items.at(-1).text, /Туя западная.*64 шт. в наличии/);
+    assert.ok(!stock.items.at(-1).plant_ids.includes(juniper));
+    await buyer('/api/shop/cart', {
+      method: 'PUT',
+      body: { plant_id: thuja, quantity: 3, previous_quantity: 0 },
+    });
+    const ownCart = await ask(buyer, 'Покажи, что в моей корзине', 'cart');
+    assert.match(ownCart.items.at(-1).text, /В вашей корзине[\s\S]*Туя западная.*3 шт./);
+    const otherCart = await ask(other, 'Что в корзине?', 'cart');
+    assert.equal(otherCart.items.at(-1).text, 'В вашей корзине пока ничего нет.');
+
+    const knownLight = app.db.prepare('SELECT light FROM plant_care WHERE plant_id = ?').get(thuja).light;
+    await buyer('/api/shop/cart', {
+      method: 'PUT',
+      body: { plant_id: hydrangea, quantity: 1, previous_quantity: 0 },
+    });
+    const cartComparison = await ask(buyer, 'Сравни растения в моей корзине по освещению', 'cart-comparison');
+    assert.match(cartComparison.items.at(-1).text, /Гортензия/);
+    assert.ok(cartComparison.items.at(-1).text.includes(knownLight));
+    await ask(buyer, 'Спасибо', 'model-history');
+    assert.equal(modelInputs.length, 1);
+    assert.ok(!modelInputs[0].history.some((item) => item.text.startsWith('В вашей корзине')));
+
+    app.db.prepare('DELETE FROM plant_care WHERE plant_id = ?').run(juniper);
+    const partial = await ask(buyer, 'Сравни тую и можжевельник по освещению', 'partial');
+    assert.equal(partial.state, 'pending');
+    const reply = partial.items.at(-1).text;
+    assert.ok(reply.includes(knownLight));
+    assert.match(reply, /Можжевельник казацкий[\s\S]*Освещение — недостаточно информации/);
+    assert.match(reply, /Передал вопрос и переписку администратору/);
+    await admin('/api/login', {
+      method: 'POST',
+      body: { username: 'admin', password: config.adminPassword },
+    });
+    const [ticket] = (await admin('/api/plants/conversations')).items;
+    assert.equal(ticket.latest, 'Сравни тую и можжевельник по освещению');
+    assert.equal((await admin('/api/plants/conversations/' + ticket.id)).items.at(-1).text, reply);
+
+    const unknown = await ask(other, 'Сравни тую и незабудку по освещению', 'unknown-plant');
+    assert.equal(unknown.state, 'pending');
+    assert.ok(unknown.items.at(-1).text.includes(knownLight));
+    assert.match(unknown.items.at(-1).text, /«незабудку» — недостаточно информации/);
+    await admin('/api/plants/conversations/' + ticket.id, {
+      method: 'POST',
+      body: { text: 'Уточню данные.', request_id: 'reset-waiting-test' },
+    });
+    const mixed = await ask(buyer, 'Сравни тую и гортензию по освещению и безопасности для кошек', 'mixed');
+    assert.equal(mixed.state, 'pending');
+    assert.ok(mixed.items.at(-1).text.includes(knownLight));
+    assert.match(mixed.items.at(-1).text, /По остальным условиям запроса недостаточно/);
+  } finally {
+    await app.stop();
+    dir.remove();
+  }
+});
+
 test('Responses API interprets recent chat and cart requests, while the server validates stock and facts', async () => {
   const directory = mkdtempDisposableSync(join(tmpdir(), 'nursery-responses-'));
   const envFile = join(directory.path, '.env');

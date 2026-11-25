@@ -121,6 +121,59 @@ const topicPatterns = {
   availability: /в налич|в продаже|остал(?:ось|ись)|распродан/,
   price: /стоимост|цен[ауые]|сколько стоит|сколько стоят/,
 };
+const comparison = /сравн|разниц|различ|отлича/;
+const comparisonFields = ['light', 'watering', 'height'];
+const requestedFields = (text) => Object.keys(fields).filter((field) => topicPatterns[field].test(text));
+
+function directRead(question, plants, named) {
+  const text = normalize(question);
+  const topics = requestedFields(text);
+  const compare = comparison.test(text);
+  const asksAboutCart =
+    /корзин/.test(text) &&
+    (compare || /покаж|посмотр|содерж|что|сколько|какие|остал|лежит|у меня/.test(text));
+  if (!cartRequest(text) && (asksAboutCart || /что я (?:выбрал|добавил|положил)/.test(text))) {
+    return {
+      action: 'cart_read',
+      plant_ids: named.map((plant) => plant.id),
+      fields: compare && !topics.length ? comparisonFields : topics,
+    };
+  }
+  if (
+    !named.length &&
+    !compare &&
+    topics.every((field) => ['availability', 'price'].includes(field)) &&
+    /каталог|(?:что|какие растения) (?:сейчас )?(?:есть |у вас )?(?:в наличии|в продаже)|что (?:можно )?купить/.test(
+      text,
+    )
+  ) {
+    return { action: 'catalog_read' };
+  }
+  if (!compare) return null;
+  const requested = topics.length ? topics : comparisonFields;
+  const separated = /^\s*сравни(?:те|ть)?\s+(.+?)\s+и\s+(.+?)(?:\s+по\s+[^?!.]+)?[?!.\s]*$/iu.exec(question);
+  if (separated) {
+    const subjects = separated.slice(1).map((subject) => ({
+      subject: subject.trim(),
+      matches: mentionedPlants(subject, plants),
+    }));
+    if (
+      subjects.some(({ matches }) => matches.length === 1) &&
+      subjects.every(
+        ({ subject, matches }) =>
+          matches.length <= 1 && (matches.length || /^[\p{L}\p{N}][\p{L}\p{N}\s'-]{0,69}$/u.test(subject)),
+      )
+    ) {
+      const ids = [...new Set(subjects.flatMap(({ matches }) => matches.map((plant) => plant.id)))];
+      const missing = subjects.filter(({ matches }) => !matches.length).map(({ subject }) => subject);
+      if (ids.length + missing.length >= 2)
+        return { action: 'care', plant_ids: ids, fields: requested, missing };
+    }
+  }
+  if (named.length >= 2)
+    return { action: 'care', plant_ids: named.map((plant) => plant.id), fields: requested };
+  return null;
+}
 
 function localPlan(question, plants, context, followUp) {
   const text = normalize(question);
@@ -138,7 +191,7 @@ function localPlan(question, plants, context, followUp) {
       : mentioned.length === 0 && (index !== -1 || context.length === 1)
         ? plants.find((item) => item.id === context[index === -1 ? 0 : index])
         : undefined;
-  const topics = Object.keys(fields).filter((field) => topicPatterns[field].test(text));
+  const topics = requestedFields(text);
   if (
     followUp ||
     /подбер|подбир|посовет|порекоменд|подход|какие растения|что посадить|что выбрать|что растет/.test(text)
@@ -306,9 +359,21 @@ export async function consult(
   stock = [],
 ) {
   const explicit = explicitAction(question, plants, context);
-  if (explicit && (explicit.action !== 'cart_clarify' || !cartRequest(normalize(question)))) return explicit;
-  if (unsupported.test(normalize(question))) return { action: 'handoff' };
+  const text = normalize(question);
+  if (explicit && (explicit.action !== 'cart_clarify' || !cartRequest(text))) return explicit;
   const named = mentionedPlants(question, plants);
+  const direct = !explicit && directRead(question, plants, named);
+  if (unsupported.test(text)) {
+    if (
+      direct &&
+      comparison.test(text) &&
+      requestedFields(text).length &&
+      ['care', 'cart_read'].includes(direct.action)
+    )
+      return { ...direct, extraMissing: true };
+    return { action: 'handoff' };
+  }
+  if (direct) return direct;
   const profiles = !explicit && !named.length ? profileCandidates(question, plants) : [];
   const [first, second] = profiles;
   if (
@@ -344,7 +409,7 @@ export async function consult(
           ? Object.fromEntries(
               Object.keys(fields).flatMap((field) => {
                 if (field === 'availability') return [[field, current?.available ?? 0]];
-                if (field === 'price') return [[field, current?.price_rub ?? null]];
+                if (field === 'price') return [[field, plant.price_rub ?? null]];
                 const value = careValue(plant, field);
                 return value ? [[field, value.slice(0, 650)]] : [];
               }),
@@ -364,6 +429,13 @@ export async function consult(
     return base;
   }
   if (!choice) return base;
+  if (choice.action === 'catalog_read' && !named.length) return { action: 'catalog_read' };
+  if (choice.action === 'cart_read' && !cartRequest(normalize(question))) {
+    const selected = Array.isArray(choice.fields)
+      ? choice.fields.filter((field) => Object.hasOwn(fields, field))
+      : [];
+    return { action: 'cart_read', plant_ids: named.map((plant) => plant.id), fields: [...new Set(selected)] };
+  }
   if (choice.action === 'care') {
     const ids = selectedPlants(choice, question, plants, context);
     const requested = choice.fields;
