@@ -9,6 +9,7 @@ export { transaction };
 const schemaFile = new URL('./schema.sql', import.meta.url);
 const plantingsMigration = new URL('./migrations/002-plantings.sql', import.meta.url);
 const catalogFile = new URL('./catalog/plants.json', import.meta.url);
+const photosTable = new URL('./catalog/photos.sql', import.meta.url);
 
 export function inventoryDatabasePath() {
   const dataHome = process.env.LOCALAPPDATA || process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
@@ -68,7 +69,6 @@ export function openDatabase(filename) {
         throw new Error('INVENTORY_DB должен указывать на базу растений.');
       }
       const { user_version: version } = db.prepare('PRAGMA user_version').get();
-      if (version === 6) return;
       if (version < 0 || version > 6) throw new Error('Неизвестная версия схемы базы учёта.');
       if (version === 0) {
         db.exec(readFileSync(schemaFile, 'utf8'));
@@ -78,8 +78,12 @@ export function openDatabase(filename) {
       if (version < 3) db.exec(readFileSync(new URL('./migrations/003-planting-feed.sql', import.meta.url), 'utf8'));
       if (version < 4) db.exec(readFileSync(new URL('./migrations/004-admin.sql', import.meta.url), 'utf8'));
       if (version < 5) db.exec('ALTER TABLE plants ADD COLUMN price_kopecks INTEGER CHECK (price_kopecks BETWEEN 0 AND 999999999999)');
-      db.exec(readFileSync(new URL('./migrations/006-shop.sql', import.meta.url), 'utf8'));
-      db.exec('PRAGMA user_version = 6');
+      if (version < 6) {
+        db.exec(readFileSync(new URL('./migrations/006-shop.sql', import.meta.url), 'utf8'));
+        db.exec('PRAGMA user_version = 6');
+      }
+      // Older releases can still open the core schema after an application rollback.
+      db.exec(readFileSync(photosTable, 'utf8'));
     });
     return db;
   } catch (error) {

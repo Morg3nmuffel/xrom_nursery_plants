@@ -1,7 +1,8 @@
 import { Inventory } from './inventory.mjs';
 import { createShop } from './shop.mjs';
 import { recordSale } from './sales.mjs';
-import { invalid } from './validation.mjs';
+import { ApiError, invalid } from './validation.mjs';
+import { photoPath, photoRequestLimit } from './catalog/photos.mjs';
 import { adminAccess, bearerToken, jsonServer, missingRoute, readJson, sameSecret, send, unauthorized } from './http.mjs';
 
 export function createService(db, { adminUser = 'admin', adminPassword, posToken, syncToken, consultant, growthIntervalMs = 30_000 }) {
@@ -22,6 +23,17 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
     if (pathname === '/health' && method === 'GET') {
       db.prepare('SELECT 1').get();
       return send(res, 200, { status: 'ok' });
+    }
+    const photo = photoPath.exec(pathname);
+    if (photo && method === 'GET') {
+      const file = inventory.catalogPhoto(photo[1]);
+      if (!file) throw new ApiError(404, 'photo_not_found', 'Фото растения не найдено.');
+      res.writeHead(200, {
+        'Content-Type': file.content_type,
+        'Content-Length': file.bytes.byteLength,
+        'X-Content-Type-Options': 'nosniff',
+      });
+      return res.end(file.bytes);
     }
     if (pathname === '/api/admin/login' && method === 'POST') {
       return send(res, 200, admin.login(await readJson(req)));
@@ -52,7 +64,9 @@ export function createService(db, { adminUser = 'admin', adminPassword, posToken
     if (pathname === '/api/admin/plants' && method === 'GET') {
       return send(res, 200, { items: inventory.catalog() });
     }
-    if (pathname === '/api/admin/plants' && method === 'POST') return send(res, 201, inventory.addPlant(await readJson(req)));
+    if (pathname === '/api/admin/plants' && method === 'POST') {
+      return send(res, 201, inventory.addPlant(await readJson(req, photoRequestLimit)));
+    }
     if (pathname === '/api/admin/plants/price' && method === 'PATCH') {
       return send(res, 200, inventory.setPrice(searchParams.get('id'), await readJson(req)));
     }

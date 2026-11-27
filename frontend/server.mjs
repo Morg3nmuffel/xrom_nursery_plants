@@ -6,6 +6,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson, sendJson } from '../backend/http.mjs';
 import { catalogImagePaths } from '../backend/catalog/images.mjs';
+import { photoPath, photoRequestLimit, photoTypes } from '../backend/catalog/photos.mjs';
 import { ApiError } from '../backend/validation.mjs';
 import { roleFromPath, roleHome, roleLabels } from './roles.mjs';
 
@@ -226,7 +227,10 @@ export function createWebServer({ urls, secureCookie = false }) {
             ([service, verb, pattern]) => service === parts[1] && verb === method && pattern.test(parts[2]),
           )
         ) {
-          const body = method === 'GET' || method === 'DELETE' ? undefined : await readJson(req);
+          const isPhotoUpload = method === 'POST' && parts[1] === 'plants' && parts[2] === '/plants';
+          const body = method === 'GET' || method === 'DELETE'
+            ? undefined
+            : await readJson(req, isPhotoUpload ? photoRequestLimit : undefined);
           return forward(parts[1], '/api/admin' + parts[2] + search, body);
         }
       }
@@ -249,6 +253,26 @@ export function createWebServer({ urls, secureCookie = false }) {
       if (asset[1] === 'image/webp') res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.end(data);
     }
+    if (method === 'GET' && photoPath.test(absolutePath)) {
+      try {
+        const response = await fetch(new URL(absolutePath, urls.plants), {
+          signal: AbortSignal.timeout(6000),
+          redirect: 'error',
+        });
+        const contentType = response.headers.get('Content-Type');
+        if (!response.ok || !photoTypes.includes(contentType)) {
+          await response.body?.cancel();
+          if (response.status === 404) throw new ApiError(404, 'photo_not_found', 'Фото растения не найдено.');
+          throw new Error('Не удалось получить фото.');
+        }
+        const data = Buffer.from(await response.arrayBuffer());
+        res.writeHead(200, { 'Content-Type': contentType, 'Content-Length': data.length });
+        return res.end(data);
+      } catch (error) {
+        if (error instanceof ApiError) throw error;
+        throw new ApiError(503, 'service_unavailable', 'Фото растения временно недоступно.');
+      }
+    }
     throw new ApiError(404, 'not_found', 'Маршрут не найден.');
   }
   return createServer({ requestTimeout: 30_000 }, async (req, res) => {
@@ -257,7 +281,7 @@ export function createWebServer({ urls, secureCookie = false }) {
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader(
       'Content-Security-Policy',
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     );
     try {
       await route(req, res);

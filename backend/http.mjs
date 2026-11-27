@@ -5,7 +5,7 @@ import { ApiError, invalid, object } from './validation.mjs';
 const bodyLimit = 64 * 1024;
 const sessionLifetime = 8 * 60 * 60 * 1000;
 
-export async function readJson(req) {
+export async function readJson(req, maxBytes = bodyLimit) {
   const mediaType = req.headers['content-type']?.split(';')[0].trim().toLowerCase();
   if (mediaType !== 'application/json') {
     throw new ApiError(415, 'json_required', 'Передайте данные как application/json.');
@@ -14,7 +14,11 @@ export async function readJson(req) {
   let size = 0;
   for await (const chunk of req.iterator({ destroyOnReturn: false })) {
     size += chunk.length;
-    if (size > bodyLimit) throw new ApiError(413, 'body_too_large', 'Превышен размер запроса 64 КиБ.');
+    if (size > maxBytes) {
+      throw new ApiError(413, 'body_too_large', maxBytes === bodyLimit
+        ? 'Превышен размер запроса 64 КиБ.'
+        : 'Запрос слишком большой. Выберите фото размером до 5 МБ.');
+    }
     chunks.push(chunk);
   }
   let value;

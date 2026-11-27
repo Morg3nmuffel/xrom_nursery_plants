@@ -49,6 +49,60 @@ async function boot(dir, clock) {
   } };
 }
 
+test('a plant photo is validated, survives restart and is shared with the shop until archival', async () => {
+  const dir = mkdtempDisposableSync(join(tmpdir(), 'nursery-catalog-photo-'));
+  let app = await boot(dir.path);
+  try {
+    const imageBytes = readFileSync(new URL('../public/plants/hydrangea-paniculata-limelight.webp', import.meta.url));
+    const reference = (await app.call('plants/plants')).items.find(p => p.care);
+    const card = { id: 'test/photo', name: 'Растение с фото', price_rub: 200, care: reference.care };
+    const photo = 'data:image/webp;base64,' + imageBytes.toString('base64');
+    const unauthorized = await fetch(app.web + '/api/plants/plants', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Nursery-Request': '1' },
+      body: JSON.stringify({ ...card, photo }),
+    });
+    assert.equal(unauthorized.status, 401);
+    await app.call('plants/plants', 'POST', { ...card, photo: photo.replace('image/webp', 'image/png') }, 400);
+    await app.call('plants/plants', 'POST', { ...card, photo: 'data:image/webp;base64,' + 'A'.repeat(7_000_000) }, 413);
+    assert.ok(!(await app.call('plants/plants')).items.some(p => p.id === card.id));
+
+    const { image } = await app.call('plants/plants', 'POST', { ...card, photo }, 201);
+    assert.match(image, /^\/plant-photos\/[a-f0-9]{32}$/);
+    const batch = await app.call('plants/plantings', 'POST',
+      { planting_id: 'photo-planting', plant_id: card.id, location: 'Ряд 1', quantity: 2 }, 201);
+    await app.call('plants/inventory/' + batch.batch_id, 'PATCH', { version: 1, stage: 'ready' });
+
+    await app.close();
+    app = await boot(dir.path);
+    const saved = (await app.call('plants/plants')).items.find(p => p.id === card.id);
+    assert.deepEqual(saved, { ...card, image });
+    const response = await fetch(app.web + image);
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-type'), 'image/webp');
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.deepEqual(Buffer.from(await response.arrayBuffer()), imageBytes);
+
+    const signup = await fetch(app.web + '/customer/api/shop/register', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Nursery-Request': '1' },
+      body: JSON.stringify({ username: 'photo-shopper', password: 'test-customer-password', name: 'Покупатель' }),
+    });
+    assert.equal(signup.status, 201);
+    const shop = await fetch(app.web + '/customer/api/shop/catalog', {
+      headers: { Cookie: signup.headers.get('set-cookie').split(';')[0] },
+    });
+    assert.equal(shop.status, 200);
+    assert.equal((await shop.json()).items.find(p => p.id === card.id).image, image);
+
+    await app.call('plants/plants?id=' + encodeURIComponent(card.id), 'DELETE');
+    assert.equal((await fetch(app.web + image)).status, 404);
+    const restored = await app.call('plants/plants', 'POST', card, 201);
+    assert.deepEqual(restored, card);
+  } finally {
+    await app.close();
+    dir.remove();
+  }
+});
+
 test('admin creates and deletes through the web gateway; database restarts preserve both decisions', async () => {
   const dir = mkdtempDisposableSync(join(tmpdir(), 'nursery-admin-'));
   let app = await boot(dir.path);

@@ -24,9 +24,10 @@ export function createShop(db, planner) {
   const sessions = new Map();
   const authAttempts = new Map();
   const answerAttempts = new Map();
-  const readyPlants = db.prepare(`SELECT p.id, p.name, p.price_kopecks / 100.0 AS price_rub, s.available, c.*
+  const readyPlants = db.prepare(`SELECT p.id, p.name, p.price_kopecks / 100.0 AS price_rub, s.available, photo.public_id, c.*
     FROM (${stock}) s JOIN plants p ON p.id = s.plant_id
     LEFT JOIN plant_care c ON c.plant_id = p.id
+    LEFT JOIN catalog_photos photo ON photo.plant_id = p.id
     WHERE p.archived_at IS NULL ORDER BY p.name, p.id`);
   const knowledge = db.prepare(`SELECT p.id, p.name, p.price_kopecks / 100.0 AS price_rub, c.* FROM plants p
     LEFT JOIN plant_care c ON c.plant_id = p.id WHERE p.archived_at IS NULL ORDER BY p.id`);
@@ -352,7 +353,7 @@ export function createShop(db, planner) {
     if (pathname === '/api/shop/catalog' && method === 'GET') {
       const items = readyPlants
         .all()
-        .map(({ id, name, price_rub, available, category, scientific_name, light, watering }) => ({
+        .map(({ id, name, price_rub, available, category, scientific_name, light, watering, public_id }) => withCatalogImage({
           id,
           name,
           price_rub,
@@ -361,7 +362,7 @@ export function createShop(db, planner) {
           scientific_name,
           light,
           watering,
-        })).map(withCatalogImage);
+        }, public_id));
       return send(res, 200, { items });
     }
     if (pathname === '/api/shop/cart') {

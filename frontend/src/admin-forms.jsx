@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { photoMaxBytes, photoTypes } from '../../backend/catalog/photos.mjs';
 import { api, careLabels } from './shared';
 import { FormFoot, useSubmit } from './components';
 
@@ -63,17 +64,79 @@ export function PriceForm({ plant, saved }) {
   </form>;
 }
 
+function checkPhoto(file) {
+  if (!photoTypes.includes(file.type)) return 'Выберите фото в формате JPG, PNG или WebP.';
+  if (!file.size) return 'Файл фото пуст.';
+  if (file.size > photoMaxBytes) return 'Размер фото должен быть не больше 5 МБ.';
+  return '';
+}
+
+async function encodePhoto(file) {
+  if (!file?.name) return undefined;
+  const error = checkPhoto(file);
+  if (error) throw new Error(error);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Не удалось прочитать фото. Выберите файл ещё раз.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function CatalogPhotoField({ disabled }) {
+  const hint = useId();
+  const inputRef = useRef(null);
+  const [preview, setPreview] = useState(null);
+  const [selected, setSelected] = useState(false);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  function choosePhoto(event) {
+    const input = event.currentTarget;
+    const file = input.files[0];
+    const error = file ? checkPhoto(file) : '';
+    input.setCustomValidity(error);
+    if (error) input.reportValidity();
+    setSelected(Boolean(file));
+    setPreview(file && !error ? URL.createObjectURL(file) : null);
+  }
+  function clearPhoto() {
+    inputRef.current.value = '';
+    inputRef.current.setCustomValidity('');
+    inputRef.current.focus();
+    setSelected(false);
+    setPreview(null);
+  }
+  function invalidPreview() {
+    inputRef.current.setCustomValidity('Не удалось открыть фото. Выберите другой файл.');
+    inputRef.current.reportValidity();
+    setPreview(null);
+  }
+  return <div className="catalog-photo-field">
+    <label>Фото растения
+      <input ref={inputRef} name="photo" type="file" accept={photoTypes.join(',')} aria-describedby={hint}
+        disabled={disabled} onChange={choosePhoto} />
+    </label>
+    <small id={hint}>Необязательно. JPG, PNG или WebP, до 5 МБ.</small>
+    {preview && <img key={preview} className="catalog-photo-preview" src={preview} alt="Предпросмотр фото"
+      onError={invalidPreview} />}
+    {selected && <button type="button" className="text-button" disabled={disabled} onClick={clearPhoto}>Убрать фото</button>}
+  </div>;
+}
+
 export function CatalogForm({ saved }) {
   const { submit, busy, error } = useSubmit(async form => {
     const care = Object.fromEntries(['scientific_name', 'category', ...Object.keys(careLabels)].map(k => [k, form.get(k)]));
     care.height = { min_cm: Number(form.get('min_cm')), max_cm: Number(form.get('max_cm')) };
     care.hardiness = { zone: form.get('zone'), min_temperature_c: Number(form.get('temperature')), notes: form.get('notes') };
-    await api('plants/plants', { method: 'POST', body: { id: form.get('id'), name: form.get('name'), price_rub: readPrice(form), care } });
+    const photo = await encodePhoto(form.get('photo'));
+    await api('plants/plants', { method: 'POST', body: {
+      id: form.get('id'), name: form.get('name'), price_rub: readPrice(form), care, photo,
+    } });
     saved('Карточка растения сохранена.');
   });
   return <form className="edit-form" onSubmit={submit}>
     <label>Название растения<input name="name" maxLength={160} required /></label>
     <label>Артикул<input name="id" maxLength={160} required /></label>
+    <CatalogPhotoField disabled={busy} />
     <PriceInput />
     <label>Научное название<input name="scientific_name" required /></label>
     <label>Категория<input name="category" required /></label>

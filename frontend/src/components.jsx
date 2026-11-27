@@ -63,7 +63,7 @@ export function PlantImage({ plant }) {
   const [failed, setFailed] = useState(null);
   if (!plant.image || failed === plant.image) return <PlantIcon id={plant.id} />;
   return (
-    <img className="plant-image" src={plant.image} alt={'Иллюстрация растения «' + plant.name + '»'}
+    <img className="plant-image" src={plant.image} alt={'Изображение растения «' + plant.name + '»'}
       width="900" height="600" loading="lazy" decoding="async" onError={() => setFailed(plant.image)} />
   );
 }

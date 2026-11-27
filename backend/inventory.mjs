@@ -1,5 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { withCatalogImage } from './catalog/images.mjs';
+import { readPlantPhoto } from './catalog/photos.mjs';
 import { transaction, writePlants } from './db.mjs';
 import { ApiError, invalid, object, quantity, string, utcDate } from './validation.mjs';
 
@@ -44,9 +46,10 @@ export class Inventory {
 
   catalog() {
     const rows = this.db.prepare(`
-      SELECT p.id, p.name, p.price_kopecks, c.* FROM plants p LEFT JOIN plant_care c ON c.plant_id = p.id
+      SELECT p.id, p.name, p.price_kopecks, photo.public_id, c.* FROM plants p
+      LEFT JOIN plant_care c ON c.plant_id = p.id LEFT JOIN catalog_photos photo ON photo.plant_id = p.id
       WHERE p.archived_at IS NULL ORDER BY p.id`).all();
-    return rows.map(p => ({
+    return rows.map(p => withCatalogImage({
       id: p.id, name: p.name, price_rub: p.price_kopecks === null ? null : p.price_kopecks / 100,
       care: p.plant_id === null ? null : {
         scientific_name: p.scientific_name, category: p.category, light: p.light,
@@ -54,7 +57,13 @@ export class Inventory {
         hardiness: { zone: p.hardiness_zone, min_temperature_c: p.min_temperature_c, notes: p.hardiness_notes },
         height: { min_cm: p.min_height_cm, max_cm: p.max_height_cm },
       },
-    })).map(withCatalogImage);
+    }, p.public_id));
+  }
+
+  catalogPhoto(publicId) {
+    return this.db.prepare(`
+      SELECT photo.content_type, photo.bytes FROM catalog_photos photo JOIN plants p ON p.id = photo.plant_id
+      WHERE photo.public_id = ? AND p.archived_at IS NULL`).get(publicId);
   }
 
   addPlant(input) {
@@ -74,14 +83,23 @@ export class Inventory {
     card.height = height;
     card.hardiness = { zone: string(h.zone, 'zone'), min_temperature_c: h.min_temperature_c,
       notes: h.notes == null || h.notes === '' ? '' : string(h.notes, 'notes', 4000) };
+    const photo = readPlantPhoto(input.photo);
+    const photoId = photo && randomBytes(16).toString('hex');
     return transaction(this.db, () => {
       const existing = this.db.prepare('SELECT archived_at FROM plants WHERE id = ?').get(id);
       if (existing?.archived_at === null) throw new ApiError(409, 'plant_exists', 'Этот артикул уже есть в справочнике.');
       writePlants(this.db, [card]);
       const kopecks = priceKopecks(input.price_rub === undefined ? null : input.price_rub);
       this.db.prepare('UPDATE plants SET archived_at = NULL, price_kopecks = ? WHERE id = ?').run(kopecks, id);
+      if (photo) {
+        this.db.prepare(`
+          INSERT INTO catalog_photos (plant_id, public_id, content_type, bytes) VALUES (?, ?, ?, ?)
+          ON CONFLICT(plant_id) DO UPDATE SET public_id = excluded.public_id,
+            content_type = excluded.content_type, bytes = excluded.bytes`
+        ).run(id, photoId, photo.contentType, photo.bytes);
+      }
       const { id: plantId, name: plantName, ...metrics } = card;
-      return withCatalogImage({ id: plantId, name: plantName, price_rub: kopecks === null ? null : kopecks / 100, care: metrics });
+      return withCatalogImage({ id: plantId, name: plantName, price_rub: kopecks === null ? null : kopecks / 100, care: metrics }, photoId);
     });
   }
 
@@ -94,10 +112,13 @@ export class Inventory {
   }
 
   removePlant(id) {
-    const result = this.db.prepare('UPDATE plants SET archived_at = ? WHERE id = ? AND archived_at IS NULL')
-      .run(new Date().toISOString(), id);
-    if (!result.changes) throw new ApiError(404, 'plant_not_found', 'Растение отсутствует в справочнике.');
-    return { id };
+    return transaction(this.db, () => {
+      const result = this.db.prepare('UPDATE plants SET archived_at = ? WHERE id = ? AND archived_at IS NULL')
+        .run(new Date().toISOString(), id);
+      if (!result.changes) throw new ApiError(404, 'plant_not_found', 'Растение отсутствует в справочнике.');
+      this.db.prepare('DELETE FROM catalog_photos WHERE plant_id = ?').run(id);
+      return { id };
+    });
   }
 
   removeBatch(id) {
