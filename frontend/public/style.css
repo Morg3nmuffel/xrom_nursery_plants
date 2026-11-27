@@ -356,6 +356,14 @@ button {
   gap: 16px;
 }
 .shop-product { overflow: hidden; }
+.plant-image {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+}
+.catalog-card .plant-image, .details .plant-image { border-radius: 6px; }
 .shop-product-art {
   display: grid;
   min-height: 106px;

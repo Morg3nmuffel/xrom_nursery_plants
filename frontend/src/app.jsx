@@ -19,7 +19,7 @@ import {
   MessageCircle,
 } from 'lucide-react';
 import { api, Brand, Badge, Empty, stages, num, dateTime, pageHome } from './shared';
-import { Modal, PanelHead, PlantTable, SearchBox, TaskBoard, TaskDetails, Care, PlantIcon } from './components';
+import { Modal, PanelHead, PlantTable, SearchBox, TaskBoard, TaskDetails, Care, PlantImage } from './components';
 import { BatchForm, MaterialForm, StockForm } from './forms';
 import { CustomerQuestions } from './admin-chat';
 import { CatalogForm, PriceForm, EmployeeForm, RemoveForm, TaskForm } from './admin-forms';
@@ -398,7 +398,7 @@ function Catalog({ data, open }) {
       <div className="catalog">
         {plants.map((p) => (
           <button key={p.id} className="catalog-card" onClick={() => open('care', p)}>
-            <PlantIcon id={p.id} />
+            <PlantImage plant={p} />
             <strong>{p.name}</strong>
             <small>{displayPrice(p.price_rub)}</small>
             <small>{p.care?.scientific_name || 'Карточка ухода не заполнена'}</small>
@@ -414,7 +414,7 @@ function Details({ type, item }) {
   if (type === 'task') return <TaskDetails task={item} />;
   return (
     <div className="details">
-      <PlantIcon id={item.id} />
+      <PlantImage plant={item} />
       <h3>{item.name}</h3>
       <p>{item.care?.scientific_name}</p>
       <p>{displayPrice(item.price_rub)}</p>

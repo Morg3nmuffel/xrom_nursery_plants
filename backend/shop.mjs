@@ -1,5 +1,6 @@
 import { randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
+import { withCatalogImage } from './catalog/images.mjs';
 import { bearerToken, missingRoute, readJson, send, unauthorized } from './http.mjs';
 import { transaction } from './sqlite.mjs';
 import { ApiError, invalid, quantity, string } from './validation.mjs';
@@ -360,7 +361,7 @@ export function createShop(db, planner) {
           scientific_name,
           light,
           watering,
-        }));
+        })).map(withCatalogImage);
       return send(res, 200, { items });
     }
     if (pathname === '/api/shop/cart') {

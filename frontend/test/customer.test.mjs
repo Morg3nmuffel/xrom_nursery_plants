@@ -143,6 +143,18 @@ test('registered buyers see ready stock and keep cart and full human handoff thr
 
     const { items } = await buyer('/api/shop/catalog');
     assert.deepEqual(items.map((plant) => plant.id).sort(), [hydrangea, thuja]);
+    const reference = (await admin('/api/plants/plants')).items;
+    assert.equal(new Set(reference.map(plant => plant.image)).size, reference.length);
+    for (const plant of reference) {
+      assert.match(plant.image, /^\/plants\/[a-z0-9-]+\.webp$/);
+      const response = await fetch(new URL(plant.image, app.url));
+      assert.equal(response.status, 200, plant.id);
+      assert.equal(response.headers.get('content-type'), 'image/webp');
+      assert.equal(Buffer.from(await response.arrayBuffer()).toString('ascii', 8, 12), 'WEBP');
+    }
+    for (const plant of items) {
+      assert.equal(plant.image, reference.find(row => row.id === plant.id).image);
+    }
     const update = (plant_id, quantity, previous_quantity, status) =>
       buyer('/api/shop/cart', {
         method: 'PUT',

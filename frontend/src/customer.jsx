@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Leaf, LogOut, MessageCircle, Minus, Plus, ShoppingBasket, Trash2 } from 'lucide-react';
 import { ChatComposer, ConversationMessages, useConversation } from './chat';
-import { PlantIcon, SearchBox } from './components';
+import { PlantIcon, PlantImage, SearchBox } from './components';
 import { api, Brand, Empty, num, pageHome } from './shared';
 
 const sections = [
@@ -46,7 +46,7 @@ function Catalog({ items, cart, busy, onQuantity, onChat }) {
           return (
             <article className="panel shop-product" key={item.id}>
               <div className="shop-product-art">
-                <PlantIcon id={item.id} />
+                <PlantImage plant={item} />
               </div>
               <div className="shop-product-body">
                 {item.category && <span className="shop-category">{item.category}</span>}

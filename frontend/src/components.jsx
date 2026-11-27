@@ -59,6 +59,14 @@ export function PlantIcon({ id }) {
     </span>
   );
 }
+export function PlantImage({ plant }) {
+  const [failed, setFailed] = useState(null);
+  if (!plant.image || failed === plant.image) return <PlantIcon id={plant.id} />;
+  return (
+    <img className="plant-image" src={plant.image} alt={'Иллюстрация растения «' + plant.name + '»'}
+      width="900" height="600" loading="lazy" decoding="async" onError={() => setFailed(plant.image)} />
+  );
+}
 export function PlantTable({ items, select, compact = false }) {
   return items.length ? (
     <div className="table-scroll">

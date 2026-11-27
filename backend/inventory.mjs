@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { withCatalogImage } from './catalog/images.mjs';
 import { transaction, writePlants } from './db.mjs';
 import { ApiError, invalid, object, quantity, string, utcDate } from './validation.mjs';
 
@@ -53,7 +54,7 @@ export class Inventory {
         hardiness: { zone: p.hardiness_zone, min_temperature_c: p.min_temperature_c, notes: p.hardiness_notes },
         height: { min_cm: p.min_height_cm, max_cm: p.max_height_cm },
       },
-    }));
+    })).map(withCatalogImage);
   }
 
   addPlant(input) {
@@ -80,7 +81,7 @@ export class Inventory {
       const kopecks = priceKopecks(input.price_rub === undefined ? null : input.price_rub);
       this.db.prepare('UPDATE plants SET archived_at = NULL, price_kopecks = ? WHERE id = ?').run(kopecks, id);
       const { id: plantId, name: plantName, ...metrics } = card;
-      return { id: plantId, name: plantName, price_rub: kopecks === null ? null : kopecks / 100, care: metrics };
+      return withCatalogImage({ id: plantId, name: plantName, price_rub: kopecks === null ? null : kopecks / 100, care: metrics });
     });
   }
 

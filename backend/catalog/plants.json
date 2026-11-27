@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "entity": "nursery_plants",
   "locale": "ru-RU",
-  "updated_at": "2026-11-24",
+  "updated_at": "2026-11-27",
   "description": "Справочник растений питомника с базовыми требованиями к уходу.",
   "fields": {
     "light": {
@@ -42,6 +42,22 @@
         "max_cm": "Максимальная высота, см"
       }
     }
+  },
+  "images": {
+    "thuja-occidentalis-smaragd": "/plants/thuja-occidentalis-smaragd.webp",
+    "picea-omorika": "/plants/picea-omorika.webp",
+    "hydrangea-paniculata-limelight": "/plants/hydrangea-paniculata-limelight.webp",
+    "acer-ginnala": "/plants/acer-ginnala.webp",
+    "spiraea-japonica-goldflame": "/plants/spiraea-japonica-goldflame.webp",
+    "berberis-thunbergii-atropurpurea": "/plants/berberis-thunbergii-atropurpurea.webp",
+    "lavandula-angustifolia": "/plants/lavandula-angustifolia.webp",
+    "rosa-westerland": "/plants/rosa-westerland.webp",
+    "cornus-alba-sibirica": "/plants/cornus-alba-sibirica.webp",
+    "juniperus-sabina": "/plants/juniperus-sabina.webp",
+    "physocarpus-opulifolius-diabolo": "/plants/physocarpus-opulifolius-diabolo.webp",
+    "syringa-vulgaris-krasavitsa-moskvy": "/plants/syringa-vulgaris-krasavitsa-moskvy.webp",
+    "clematis-nelly-moser": "/plants/clematis-nelly-moser.webp",
+    "petunia-ampelnaya": "/plants/petunia-ampelnaya.webp"
   },
   "plants": [
     {

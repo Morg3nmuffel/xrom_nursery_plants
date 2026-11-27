@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readJson, sendJson } from '../backend/http.mjs';
+import { catalogImagePaths } from '../backend/catalog/images.mjs';
 import { ApiError } from '../backend/validation.mjs';
 import { roleFromPath, roleHome, roleLabels } from './roles.mjs';
 
@@ -16,6 +17,10 @@ const files = new Map([
   ['/style.css', ['style.css', 'text/css']],
   ['/greenhouse.jpg', ['greenhouse.jpg', 'image/jpeg']],
 ]);
+for (const path of catalogImagePaths) {
+  if (!/^\/plants\/[a-z0-9-]+\.webp$/.test(path)) throw new Error('Некорректный путь иллюстрации: ' + path);
+  files.set(path, [path.slice(1), 'image/webp']);
+}
 const routes = [
   ['plants', 'GET', /^\/(inventory|plants|inventory\/[1-9]\d*(\/history)?)$/],
   ['plants', 'POST', /^\/(plantings|plants)$/],
@@ -241,6 +246,7 @@ export function createWebServer({ urls, secureCookie = false }) {
     if (method === 'GET' && asset) {
       const data = await readFile(new URL('./public/' + asset[0], import.meta.url));
       res.setHeader('Content-Type', asset[1]);
+      if (asset[1] === 'image/webp') res.setHeader('Cache-Control', 'public, max-age=86400');
       return res.end(data);
     }
     throw new ApiError(404, 'not_found', 'Маршрут не найден.');
